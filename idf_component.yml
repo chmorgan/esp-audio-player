@@ -1,0 +1,7 @@
+description: Lightweight audio decoding component for esp processors
+url: https://github.com/chmorgan/esp-audio-player
+dependencies:
+  ## Required IDF version
+  idf:
+    version: ">=4.1.0"
+  chmorgan/esp-libhelix-mp3: ">=1.0.0,<2.0.0"
