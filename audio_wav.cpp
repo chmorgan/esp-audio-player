@@ -18,8 +18,8 @@ bool is_wav(FILE *fp, wav_instance *pInstance) {
     }
 
     wav_header_t *wav_head = &pInstance->header;
-    if((NULL == strstr((char *)wav_head->ChunkID, "RIFF")) ||
-        (NULL == strstr((char*)wav_head->Format, "WAVE"))
+    if((NULL == strstr(static_cast<char *>(wav_head->ChunkID), "RIFF")) ||
+        (NULL == strstr(static_cast<char*>(wav_head->Format, "WAVE")))
       )
     {
         return false;

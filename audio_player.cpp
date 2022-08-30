@@ -105,7 +105,7 @@ audio_player_state_t audio_player_get_state() {
 
 esp_err_t audio_player_callback_register(audio_player_cb_t call_back, void *user_ctx)
 {
-    ESP_RETURN_ON_FALSE(esp_ptr_executable((void*)call_back), ESP_ERR_INVALID_ARG,
+    ESP_RETURN_ON_FALSE(esp_ptr_executable(static_cast<void*>(call_back)), ESP_ERR_INVALID_ARG,
         TAG, "Not a valid call back");
 
     instance.s_audio_cb = call_back;
@@ -114,6 +114,9 @@ esp_err_t audio_player_callback_register(audio_player_cb_t call_back, void *user
     return ESP_OK;
 }
 
+// This function is used in some optional logging functions so we don't want to
+// have a cppcheck warning here
+// cppcheck-suppress unusedFunction
 const char* event_to_string(audio_player_callback_event_t event) {
     switch(event) {
     case AUDIO_PLAYER_CALLBACK_EVENT_IDLE:
@@ -159,7 +162,7 @@ static audio_player_callback_event_t state_to_event(audio_player_state_t state) 
 static void dispatch_callback(audio_instance_t *i, audio_player_callback_event_t event) {
     LOGI_1("event '%s'", event_to_string(event));
 
-    if (esp_ptr_executable((void*)i->s_audio_cb)) {
+    if (esp_ptr_executable(static_cast<void*>(i->s_audio_cb))) {
         audio_player_cb_ctx_t ctx = {
             .audio_event = event,
             .user_ctx = i->audio_cb_usrt_ctx,
@@ -201,8 +204,8 @@ static esp_err_t mono_to_stereo(uint32_t output_bits_per_sample, decode_data &ad
     // NOTE: -1 is because we want to shift to the sample at position X
     //       but if we do (ptr + X) we end up at the sample at index X instead
     //       which is one further
-    int16_t *out = (int16_t*)adata.samples + (new_sample_count - 1);
-    int16_t *in = (int16_t*)adata.samples + (adata.frame_count - 1);
+    int16_t *out = static_cast<int16_t*>(adata.samples) + (new_sample_count - 1);
+    int16_t *in = static_cast<int16_t*>(adata.samples) + (adata.frame_count - 1);
     size_t samples = adata.frame_count;
     while(samples) {
         // write right channel
@@ -249,6 +252,8 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
 #endif
 
 #if defined(CONFIG_AUDIO_PLAYER_ENABLE_WAV)
+    // This can be a pointless condition depending on the build options, no reason to warn about it
+    // cppcheck-suppress knownConditionTrueFalse
     if(file_type == FILE_TYPE_UNKNOWN)
     {
         if(is_wav(fp, &i->wav_data)) {
@@ -258,6 +263,7 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
     }
 #endif
 
+    // cppcheck-suppress knownConditionTrueFalse
     if(file_type == FILE_TYPE_UNKNOWN) {
         ESP_LOGE(TAG, "unknown file type, cleaning up");
         dispatch_callback(i, AUDIO_PLAYER_CALLBACK_EVENT_UNKNOWN_FILE_TYPE);
@@ -395,7 +401,7 @@ clean_up:
 
 static void audio_task(void *pvParam)
 {
-    audio_instance_t *i = (audio_instance_t*)pvParam;
+    audio_instance_t *i = static_cast<audio_instance_t*>(pvParam);
     audio_player_event_t audio_event;
 
     while (true) {
@@ -529,15 +535,15 @@ esp_err_t audio_player_new(audio_player_config_t config)
     /** See https://github.com/ultraembedded/libhelix-mp3/blob/0a0e0673f82bc6804e5a3ddb15fb6efdcde747cd/testwrap/main.c#L74 */
     instance.output.samples_capacity = MAX_NCHAN * MAX_NGRAN * MAX_NSAMP;
     instance.output.samples_capacity_max = instance.output.samples_capacity * 2;
-    instance.output.samples = (uint8_t*)malloc(instance.output.samples_capacity_max);
+    instance.output.samples = static_cast<uint8_t*>(malloc(instance.output.samples_capacity_max));
     LOGI_1("samples_capacity %d bytes", instance.output.samples_capacity_max);
-    int ret;
+    int ret = ESP_OK;
     ESP_GOTO_ON_FALSE(NULL != instance.output.samples, ESP_ERR_NO_MEM, cleanup,
         TAG, "Failed allocate output buffer");
 
 #if defined(CONFIG_AUDIO_PLAYER_ENABLE_MP3)
     instance.mp3_data.data_buf_size = MAINBUF_SIZE * 3;
-    instance.mp3_data.data_buf = (uint8_t*)malloc(instance.mp3_data.data_buf_size);
+    instance.mp3_data.data_buf = static_cast<uint8_t*>(malloc(instance.mp3_data.data_buf_size));
     ESP_GOTO_ON_FALSE(NULL != instance.mp3_data.data_buf, ESP_ERR_NO_MEM, cleanup,
         TAG, "Failed allocate mp3 data buffer");
 
@@ -562,8 +568,11 @@ esp_err_t audio_player_new(audio_player_config_t config)
     // start muted
     instance.config.mute_fn(AUDIO_PLAYER_MUTE);
 
-    return ESP_OK;
+    return ret;
 
+// At the moment when we run cppcheck there is a lack of esp-idf header files this
+// means cppcheck doesn't know that ESP_GOTO_ON_FALSE() etc are making use of this label
+// cppcheck-suppress unusedLabelConfiguration
 cleanup:
     cleanup_memory(instance);
 
