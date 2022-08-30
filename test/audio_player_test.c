@@ -116,6 +116,10 @@ TEST_CASE("audio player states and callbacks are correct", "[audio player]")
 
     // -1 due to the size being 1 byte too large, I think because end is the byte
     // immediately after the last byte in the memory but I'm not sure - cmm 2022-08-20
+    //
+    // Suppression as these are linker symbols and cppcheck doesn't know how to ensure
+    // they are the same object
+    // cppcheck-suppress comparePointers
     size_t mp3_size = (mp3_end - mp3_start) - 1;
     ESP_LOGI(TAG, "mp3_size %zu bytes", mp3_size);
 
