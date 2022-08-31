@@ -22,7 +22,7 @@ It does however have a number of advantages at the moment including:
 
 ## Dependencies
 
-For MP3 support you'll need the [esp32-libhelix-mp3](https://github.com/chmorgan/esp32-libhelix-mp3) component.
+For MP3 support you'll need the [esp-libhelix-mp3](https://github.com/chmorgan/esp-libhelix-mp3) component.
 
 ## Tests
 
