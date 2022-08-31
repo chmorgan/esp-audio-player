@@ -6,9 +6,10 @@ jobs:
     name: cppcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: cppcheck
         uses: chmorgan/cppcheck-action@v1.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN}}
           inline_suppression: enable
+          other_options: --suppress=missingInclude
