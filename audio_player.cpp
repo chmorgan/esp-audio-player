@@ -105,7 +105,7 @@ audio_player_state_t audio_player_get_state() {
 
 esp_err_t audio_player_callback_register(audio_player_cb_t call_back, void *user_ctx)
 {
-    ESP_RETURN_ON_FALSE(esp_ptr_executable(static_cast<void*>(call_back)), ESP_ERR_INVALID_ARG,
+    ESP_RETURN_ON_FALSE(esp_ptr_executable(reinterpret_cast<void*>(call_back)), ESP_ERR_INVALID_ARG,
         TAG, "Not a valid call back");
 
     instance.s_audio_cb = call_back;
@@ -162,7 +162,7 @@ static audio_player_callback_event_t state_to_event(audio_player_state_t state) 
 static void dispatch_callback(audio_instance_t *i, audio_player_callback_event_t event) {
     LOGI_1("event '%s'", event_to_string(event));
 
-    if (esp_ptr_executable(static_cast<void*>(i->s_audio_cb))) {
+    if (esp_ptr_executable(reinterpret_cast<void*>(i->s_audio_cb))) {
         audio_player_cb_ctx_t ctx = {
             .audio_event = event,
             .user_ctx = i->audio_cb_usrt_ctx,
@@ -204,8 +204,8 @@ static esp_err_t mono_to_stereo(uint32_t output_bits_per_sample, decode_data &ad
     // NOTE: -1 is because we want to shift to the sample at position X
     //       but if we do (ptr + X) we end up at the sample at index X instead
     //       which is one further
-    int16_t *out = static_cast<int16_t*>(adata.samples) + (new_sample_count - 1);
-    int16_t *in = static_cast<int16_t*>(adata.samples) + (adata.frame_count - 1);
+    int16_t *out = reinterpret_cast<int16_t*>(adata.samples) + (new_sample_count - 1);
+    int16_t *in = reinterpret_cast<int16_t*>(adata.samples) + (adata.frame_count - 1);
     size_t samples = adata.frame_count;
     while(samples) {
         // write right channel

@@ -97,7 +97,8 @@ DECODE_STATUS decode_mp3(HMP3Decoder mp3_decoder, FILE *fp, decode_data *pData, 
         uint8_t *read_ptr = pInstance->read_ptr + offset; /*!< Data start point */
         unread_bytes -= offset;
         LOGI_3("read 0x%p, unread %d", read_ptr, unread_bytes);
-        int mp3_dec_err = MP3Decode(mp3_decoder, &read_ptr, (int*)&unread_bytes, static_cast<int16_t *>(pData->samples), 0);
+        int mp3_dec_err = MP3Decode(mp3_decoder, &read_ptr, (int*)&unread_bytes, reinterpret_cast<int16_t *>(pData->samples), 
+0);
 
         pInstance->read_ptr = read_ptr;
 
