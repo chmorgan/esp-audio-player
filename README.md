@@ -27,3 +27,20 @@ For MP3 support you'll need the [esp-libhelix-mp3](https://github.com/chmorgan/e
 ## Tests
 
 Unity tests are implemented in the [test/](../test) folder.
+
+## States
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle : new(), cb(IDLE)
+    Idle --> Playing : play(), cb(PLAYING)
+    Playing --> Paused : pause(), cb(PAUSE)
+    Paused --> Playing : resume(), cb(PLAYING)
+    Playing --> Playing : play(), cb(COMPLETED_PLAYING_NEXT)
+    Paused --> Idle : stop(), cb(IDLE)
+    Playing --> Idle : song complete, cb(IDLE)
+    [*] --> Shutdown : delete(), cb(SHUTDOWN)
+    Shutdown --> Idle : new(), cb(IDLE)
+```
+
+Note: Diagram shortens callbacks from AUDIO_PLAYER_EVENT_xxx to xxx, and functions from audio_player_xxx() to xxx(), for clarity.
