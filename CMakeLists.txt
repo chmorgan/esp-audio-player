@@ -14,7 +14,7 @@ if(CONFIG_AUDIO_PLAYER_ENABLE_MP3)
 endif()
 
 # TODO: move inside of the 'if(CONFIG_AUDIO_PLAYER_ENABLE_MP3)' when everything builds correctly
-list(APPEND requires "esp32-libhelix-mp3")
+list(APPEND requires "esp-libhelix-mp3")
 
 if(CONFIG_AUDIO_PLAYER_ENABLE_WAV)
     list(APPEND srcs "audio_wav.cpp")
