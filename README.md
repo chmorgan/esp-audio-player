@@ -1,5 +1,8 @@
 # Audio player component for esp32
 
+
+[![cppcheck-action](https://github.com/chmorgan/esp-audio-player/actions/workflows/cppcheck.yml/badge.svg)](https://github.com/chmorgan/esp-audio-player/actions/workflows/cppcheck.yml)
+
 ## Capabilities
 
 * MP3 decoding (via libhelix-mp3)
