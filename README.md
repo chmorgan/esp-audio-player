@@ -47,3 +47,16 @@ stateDiagram-v2
 ```
 
 Note: Diagram shortens callbacks from AUDIO_PLAYER_EVENT_xxx to xxx, and functions from audio_player_xxx() to xxx(), for clarity.
+
+
+## Release process - Pushing component to the IDF Component Registry
+
+The github workflow, .github/workflows/esp_upload_component.yml, pushes data to the espressif
+[IDF component registry](https://components.espressif.com).
+
+To push a new version:
+
+* Apply a git tag via 'git tag vA.B.C'
+* Push to the 'main' branch
+
+The github workflow *should* run and automatically push to the IDF component registry.
