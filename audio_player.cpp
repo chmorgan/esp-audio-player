@@ -82,7 +82,6 @@ typedef struct audio_instance {
     /* **************** AUDIO CALLBACK **************** */
     audio_player_cb_t s_audio_cb;
     void *audio_cb_usrt_ctx;
-    i2s_port_t port;
     audio_player_state_t state;
 
     audio_player_config_t config;
@@ -360,9 +359,8 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
                         i2s_format.sample_rate,
                         i2s_format.bits_per_sample,
                         i2s_format.channels);
-                i2s_channel_t channel_setting = (i2s_format.channels == 1) ? I2S_CHANNEL_MONO : I2S_CHANNEL_STEREO;
-                ret = i2s_set_clk(i->port,
-                            i2s_format.sample_rate,
+                i2s_slot_mode_t channel_setting = (i2s_format.channels == 1) ? I2S_SLOT_MODE_MONO : I2S_SLOT_MODE_STEREO;
+                ret = i->config.clk_set_fn(i2s_format.sample_rate,
                             i2s_format.bits_per_sample,
                             channel_setting);
                 ESP_GOTO_ON_ERROR(ret, clean_up, TAG, "i2s_set_clk");
@@ -382,7 +380,7 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
                 bytes_to_write,
                 i->output.frame_count);
 
-            i2s_write(i->port, i->output.samples, bytes_to_write, &i2s_bytes_written, portMAX_DELAY);
+            i->config.write_fn(i->output.samples, bytes_to_write, &i2s_bytes_written, portMAX_DELAY);
             if(bytes_to_write != i2s_bytes_written) {
                 ESP_LOGE(TAG, "to write %d != written %d", bytes_to_write, i2s_bytes_written);
             }
