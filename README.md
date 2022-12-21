@@ -57,6 +57,6 @@ The github workflow, .github/workflows/esp_upload_component.yml, pushes data to 
 To push a new version:
 
 * Apply a git tag via 'git tag vA.B.C'
-* Push to the 'main' branch
+* Push tags via 'git push --tags'
 
 The github workflow *should* run and automatically push to the IDF component registry.
