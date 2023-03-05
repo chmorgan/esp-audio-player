@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <string.h>
 #include <stdio.h>
 #include "audio_wav.h"
@@ -42,7 +43,7 @@ bool is_wav(FILE *fp, wav_instance *pInstance) {
         }
     }
 
-    LOGI_2("sample_rate=%d, channels=%d, bps=%d",
+    LOGI_2("sample_rate=%" PRIi32 ", channels=%d, bps=%d",
             wav_head->SampleRate,
             wav_head->NumChannels,
             wav_head->BitsPerSample);

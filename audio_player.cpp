@@ -18,6 +18,7 @@
  *      limitations under the License.
  */
 
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -355,7 +356,7 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
                     (i2s_format.channels != i->output.fmt.channels) ||
                     (i2s_format.bits_per_sample != i->output.fmt.bits_per_sample)) {
                 i2s_format = i->output.fmt;
-                LOGI_1("format change: sr=%d, bit=%d, ch=%d",
+                LOGI_1("format change: sr=%d, bit=%" PRIu32 ", ch=%" PRIu32,
                         i2s_format.sample_rate,
                         i2s_format.bits_per_sample,
                         i2s_format.channels);
@@ -374,7 +375,7 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
              */
             size_t i2s_bytes_written = 0;
             size_t bytes_to_write = i->output.frame_count * i->output.fmt.channels * (i2s_format.bits_per_sample / 8);
-            LOGI_2("c %d, bps %d, bytes %d, frame_count %d",
+            LOGI_2("c %" PRIu32 ", bps %" PRIu32 ", bytes %d, frame_count %d",
                 i->output.fmt.channels,
                 i2s_format.bits_per_sample,
                 bytes_to_write,
@@ -382,7 +383,7 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
 
             i->config.write_fn(i->output.samples, bytes_to_write, &i2s_bytes_written, portMAX_DELAY);
             if(bytes_to_write != i2s_bytes_written) {
-                ESP_LOGE(TAG, "to write %d != written %d", bytes_to_write, i2s_bytes_written);
+                ESP_LOGE(TAG, "to write %zu != written %zu", bytes_to_write, i2s_bytes_written);
             }
         } else if(decode_status == DECODE_STATUS_NO_DATA_CONTINUE)
         {
