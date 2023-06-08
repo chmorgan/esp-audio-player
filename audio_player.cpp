@@ -104,9 +104,13 @@ audio_player_state_t audio_player_get_state() {
 
 esp_err_t audio_player_callback_register(audio_player_cb_t call_back, void *user_ctx)
 {
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
     ESP_RETURN_ON_FALSE(esp_ptr_executable(reinterpret_cast<void*>(call_back)), ESP_ERR_INVALID_ARG,
         TAG, "Not a valid call back");
-
+#else
+    ESP_RETURN_ON_FALSE(reinterpret_cast<void*>(call_back), ESP_ERR_INVALID_ARG,
+        TAG, "Not a valid call back");
+#endif
     instance.s_audio_cb = call_back;
     instance.audio_cb_usrt_ctx = user_ctx;
 
@@ -161,7 +165,11 @@ static audio_player_callback_event_t state_to_event(audio_player_state_t state) 
 static void dispatch_callback(audio_instance_t *i, audio_player_callback_event_t event) {
     LOGI_1("event '%s'", event_to_string(event));
 
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
     if (esp_ptr_executable(reinterpret_cast<void*>(i->s_audio_cb))) {
+#else
+    if (reinterpret_cast<void*>(i->s_audio_cb)) {
+#endif
         audio_player_cb_ctx_t ctx = {
             .audio_event = event,
             .user_ctx = i->audio_cb_usrt_ctx,
