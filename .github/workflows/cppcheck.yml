@@ -8,7 +8,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: cppcheck
-        uses: chmorgan/cppcheck-action@v1.2
+        uses: chmorgan/cppcheck-action@v1.4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN}}
           inline_suppression: enable
