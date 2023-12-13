@@ -69,8 +69,7 @@ DECODE_STATUS decode_mp3(HMP3Decoder mp3_decoder, FILE *fp, decode_data *pData, 
         pInstance->bytes_in_data_buf = unread_bytes + nRead;
         pInstance->read_ptr = pInstance->data_buf;
 
-        if (nRead == 0)
-        {
+        if ((nRead == 0) || feof(fp)) {
             pInstance->eof_reached = true;
         }
 
@@ -119,8 +118,10 @@ DECODE_STATUS decode_mp3(HMP3Decoder mp3_decoder, FILE *fp, decode_data *pData, 
                 frame_info.outputSamps,
                 starting_unread_bytes - unread_bytes);
         } else {
-            if(mp3_dec_err == ERR_MP3_MAINDATA_UNDERFLOW)
-            {
+            if (pInstance->eof_reached) {
+                ESP_LOGE(TAG, "status error %d, but EOF", mp3_dec_err);
+                return DECODE_STATUS_DONE;
+            } else if (mp3_dec_err == ERR_MP3_MAINDATA_UNDERFLOW) {
                 // underflow indicates MP3Decode should be called again
                 LOGI_1("underflow read ptr is 0x%p", read_ptr);
                 return DECODE_STATUS_NO_DATA_CONTINUE;
