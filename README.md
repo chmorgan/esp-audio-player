@@ -23,6 +23,24 @@ It does however have a number of advantages at the moment including:
 * Fully open source (esp-adf has a number of binary modules at the moment)
 * Minimal size (it's less capable, but also simpler, than esp-adf)
 
+## Getting started
+
+### Examples
+
+* [esp-box mp3_demo](https://github.com/espressif/esp-box/tree/master/examples/mp3_demo) uses esp-audio-player.
+* The [test example](https://github.com/chmorgan/esp-audio-player/tree/main/test) is a simpler example than mp3_demo that also uses the esp-box hardware.
+
+### How to use this?
+[esp-audio-player is a component](https://components.espressif.com/components/chmorgan/esp-audio-player) on the [Espressif component registry](https://components.espressif.com).
+
+In your project run:
+```
+idf.py add-dependency chmorgan/esp-audio-player
+```
+
+to add the component dependency to the project's manifest file.
+
+
 ## Dependencies
 
 For MP3 support you'll need the [esp-libhelix-mp3](https://github.com/chmorgan/esp-libhelix-mp3) component.
