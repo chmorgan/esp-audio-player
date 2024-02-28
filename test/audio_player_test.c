@@ -100,7 +100,8 @@ TEST_CASE("audio player can be newed and deleted", "[audio player]")
     audio_player_config_t config = { .mute_fn = audio_mute_function,
                                      .write_fn = bsp_i2s_write,
                                      .clk_set_fn = bsp_i2s_reconfig_clk,
-                                     .priority = 0 };
+                                     .priority = 0,
+                                     .coreID = 0 };
     esp_err_t ret = audio_player_new(config);
     TEST_ASSERT_EQUAL(ret, ESP_OK);
 
@@ -174,7 +175,8 @@ TEST_CASE("audio player states and callbacks are correct", "[audio player]")
     audio_player_config_t config = { .mute_fn = audio_mute_function,
                                      .write_fn = bsp_i2s_write,
                                      .clk_set_fn = bsp_i2s_reconfig_clk,
-                                     .priority = 0 };
+                                     .priority = 0,
+                                     .coreID = 0 };
     ret = audio_player_new(config);
     TEST_ASSERT_EQUAL(ret, ESP_OK);
 

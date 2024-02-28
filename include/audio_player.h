@@ -158,6 +158,7 @@ typedef struct {
     audio_reconfig_std_clock clk_set_fn;
     audio_player_write_fn write_fn;
     UBaseType_t priority; /*< FreeRTOS task priority */
+    BaseType_t coreID; /*< ESP32 core ID */
 } audio_player_config_t;
 
 /**

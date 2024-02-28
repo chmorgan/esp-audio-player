@@ -566,7 +566,7 @@ esp_err_t audio_player_new(audio_player_config_t config)
                                 &instance,
         (UBaseType_t)           instance.config.priority,
         (TaskHandle_t * const)  NULL,
-                                0);
+        (BaseType_t)            instance.config.coreID);
 
     ESP_GOTO_ON_FALSE(pdPASS == task_val, ESP_ERR_NO_MEM, cleanup,
         TAG, "Failed create audio task");
