@@ -94,6 +94,8 @@ typedef struct audio_instance {
     HMP3Decoder mp3_decoder;
     mp3_instance mp3_data;
 #endif
+
+    format i2s_format;  // last configured i2s format
 } audio_instance_t;
 
 static audio_instance_t instance;
@@ -238,9 +240,6 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
 {
     LOGI_1("start to decode");
 
-    format i2s_format;
-    memset(&i2s_format, 0, sizeof(i2s_format));
-
     esp_err_t ret = ESP_OK;
     audio_player_event_t audio_event = { .type = AUDIO_PLAYER_REQUEST_NONE, .fp = NULL };
 
@@ -359,17 +358,17 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
             }
 
             /* Configure I2S clock if the output format changed */
-            if ((i2s_format.sample_rate != i->output.fmt.sample_rate) ||
-                    (i2s_format.channels != i->output.fmt.channels) ||
-                    (i2s_format.bits_per_sample != i->output.fmt.bits_per_sample)) {
-                i2s_format = i->output.fmt;
-                LOGI_1("format change: sr=%d, bit=%d, ch=%d",
-                        i2s_format.sample_rate,
-                        i2s_format.bits_per_sample,
-                        i2s_format.channels);
-                i2s_slot_mode_t channel_setting = (i2s_format.channels == 1) ? I2S_SLOT_MODE_MONO : I2S_SLOT_MODE_STEREO;
-                ret = i->config.clk_set_fn(i2s_format.sample_rate,
-                            i2s_format.bits_per_sample,
+            if ((instance.i2s_format.sample_rate != i->output.fmt.sample_rate) ||
+                    (instance.i2s_format.channels != i->output.fmt.channels) ||
+                    (instance.i2s_format.bits_per_sample != i->output.fmt.bits_per_sample)) {
+                instance.i2s_format = i->output.fmt;
+                LOGI_1("format change: sr=%d, bit=%lu, ch=%lu",
+                        instance.i2s_format.sample_rate,
+                        instance.i2s_format.bits_per_sample,
+                        instance.i2s_format.channels);
+                i2s_slot_mode_t channel_setting = (instance.i2s_format.channels == 1) ? I2S_SLOT_MODE_MONO : I2S_SLOT_MODE_STEREO;
+                ret = i->config.clk_set_fn(instance.i2s_format.sample_rate,
+                            instance.i2s_format.bits_per_sample,
                             channel_setting);
                 ESP_GOTO_ON_ERROR(ret, clean_up, TAG, "i2s_set_clk");
             }
@@ -381,7 +380,7 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
              * to ensure playback without interruption.
              */
             size_t i2s_bytes_written = 0;
-            size_t bytes_to_write = i->output.frame_count * i->output.fmt.channels * (i2s_format.bits_per_sample / 8);
+            size_t bytes_to_write = i->output.frame_count * i->output.fmt.channels * (instance.i2s_format.bits_per_sample / 8);
             LOGI_2("c %d, bps %d, bytes %d, frame_count %d",
                 i->output.fmt.channels,
                 i2s_format.bits_per_sample,
@@ -557,6 +556,8 @@ esp_err_t audio_player_new(audio_player_config_t config)
     ESP_GOTO_ON_FALSE(NULL != instance.mp3_decoder, ESP_ERR_NO_MEM, cleanup,
         TAG, "Failed create MP3 decoder");
 #endif
+
+    memset(&instance.i2s_format, 0, sizeof(instance.i2s_format));
 
     instance.running = true;
     task_val = xTaskCreatePinnedToCore(
