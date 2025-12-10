@@ -35,6 +35,7 @@
 #include "sdkconfig.h"
 
 #include "audio_player.h"
+#include "audio_instance.h"
 
 #include "audio_wav.h"
 #include "audio_mp3.h"
@@ -98,14 +99,14 @@ typedef struct audio_instance {
     format i2s_format;  // last configured i2s format
 } audio_instance_t;
 
-static audio_instance_t instance;
+static audio_instance_t *g_instance = NULL;  // when non-null, in legacy non-mixer mode
 
-audio_player_state_t audio_player_get_state() {
-    return instance.state;
+audio_player_state_t audio_instance_get_state(audio_instance_handle_t h) {
+    audio_instance_t *i = (audio_instance_t*)h;
+    return i ? i->state : AUDIO_PLAYER_STATE_IDLE;
 }
 
-esp_err_t audio_player_callback_register(audio_player_cb_t call_back, void *user_ctx)
-{
+esp_err_t audio_instance_callback_register(audio_instance_handle_t h, audio_player_cb_t call_back, void *user_ctx) {
 #if CONFIG_IDF_TARGET_ARCH_XTENSA
     ESP_RETURN_ON_FALSE(esp_ptr_executable(reinterpret_cast<void*>(call_back)), ESP_ERR_INVALID_ARG,
         TAG, "Not a valid call back");
@@ -113,8 +114,10 @@ esp_err_t audio_player_callback_register(audio_player_cb_t call_back, void *user
     ESP_RETURN_ON_FALSE(reinterpret_cast<void*>(call_back), ESP_ERR_INVALID_ARG,
         TAG, "Not a valid call back");
 #endif
-    instance.s_audio_cb = call_back;
-    instance.audio_cb_usrt_ctx = user_ctx;
+    audio_instance_t *i = (audio_instance_t*)h;
+    CHECK_INSTANCE(i);
+    i->s_audio_cb = call_back;
+    i->audio_cb_usrt_ctx = user_ctx;
 
     return ESP_OK;
 }
@@ -188,15 +191,15 @@ static void set_state(audio_instance_t *i, audio_player_state_t new_state) {
     }
 }
 
-static void audio_instance_init(audio_instance_t &i) {
-    i.event_queue = NULL;
-    i.s_audio_cb = NULL;
-    i.audio_cb_usrt_ctx = NULL;
-    i.state = AUDIO_PLAYER_STATE_IDLE;
+static void audio_instance_init(audio_instance_t *i) {
+    i->event_queue = NULL;
+    i->s_audio_cb = NULL;
+    i->audio_cb_usrt_ctx = NULL;
+    i->state = AUDIO_PLAYER_STATE_IDLE;
+    memset(&i->i2s_format, 0, sizeof(i->i2s_format));
 }
 
-static esp_err_t mono_to_stereo(uint32_t output_bits_per_sample, decode_data &adata)
-{
+static esp_err_t mono_to_stereo(uint32_t output_bits_per_sample, decode_data &adata) {
     size_t data = adata.frame_count * (output_bits_per_sample / BITS_PER_BYTE);
     data *= 2;
 
@@ -236,8 +239,7 @@ static esp_err_t mono_to_stereo(uint32_t output_bits_per_sample, decode_data &ad
     return ESP_OK;
 }
 
-static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
-{
+static esp_err_t aplay_file(audio_instance_t *i, FILE *fp) {
     LOGI_1("start to decode");
 
     esp_err_t ret = ESP_OK;
@@ -347,9 +349,9 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
         // break out and exit if we aren't supposed to continue decoding
         if(decode_status == DECODE_STATUS_CONTINUE)
         {
-            // if mono, convert to stereo as es8311 requires stereo input
+            // if mono and force_stereo set, convert to stereo as es8311 requires stereo input
             // even though it is mono output
-            if(i->output.fmt.channels ==  1) {
+            if(i->output.fmt.channels == 1 && i->config.force_stereo) {
                 LOGI_3("c == 1, mono -> stereo");
                 ret = mono_to_stereo(i->output.fmt.bits_per_sample, i->output);
                 if(ret != ESP_OK) {
@@ -358,17 +360,17 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
             }
 
             /* Configure I2S clock if the output format changed */
-            if ((instance.i2s_format.sample_rate != i->output.fmt.sample_rate) ||
-                    (instance.i2s_format.channels != i->output.fmt.channels) ||
-                    (instance.i2s_format.bits_per_sample != i->output.fmt.bits_per_sample)) {
-                instance.i2s_format = i->output.fmt;
+            if ((i->i2s_format.sample_rate != i->output.fmt.sample_rate) ||
+                    (i->i2s_format.channels != i->output.fmt.channels) ||
+                    (i->i2s_format.bits_per_sample != i->output.fmt.bits_per_sample)) {
+                i->i2s_format = i->output.fmt;
                 LOGI_1("format change: sr=%d, bit=%lu, ch=%lu",
-                        instance.i2s_format.sample_rate,
-                        instance.i2s_format.bits_per_sample,
-                        instance.i2s_format.channels);
-                i2s_slot_mode_t channel_setting = (instance.i2s_format.channels == 1) ? I2S_SLOT_MODE_MONO : I2S_SLOT_MODE_STEREO;
-                ret = i->config.clk_set_fn(instance.i2s_format.sample_rate,
-                            instance.i2s_format.bits_per_sample,
+                        i->i2s_format.sample_rate,
+                        i->i2s_format.bits_per_sample,
+                        i->i2s_format.channels);
+                i2s_slot_mode_t channel_setting = (i->i2s_format.channels == 1) ? I2S_SLOT_MODE_MONO : I2S_SLOT_MODE_STEREO;
+                ret = i->config.clk_set_fn(i->i2s_format.sample_rate,
+                            i->i2s_format.bits_per_sample,
                             channel_setting);
                 ESP_GOTO_ON_ERROR(ret, clean_up, TAG, "i2s_set_clk");
             }
@@ -379,17 +381,22 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp)
              * audio decoding to occur while the previous set of samples is finishing playback, in order
              * to ensure playback without interruption.
              */
-            size_t i2s_bytes_written = 0;
-            size_t bytes_to_write = i->output.frame_count * i->output.fmt.channels * (instance.i2s_format.bits_per_sample / 8);
+            size_t bytes_written = 0;
+            size_t bytes_to_write = i->output.frame_count * i->output.fmt.channels * (i->i2s_format.bits_per_sample / 8);
             LOGI_2("c %d, bps %d, bytes %d, frame_count %d",
                 i->output.fmt.channels,
                 i2s_format.bits_per_sample,
                 bytes_to_write,
                 i->output.frame_count);
 
-            i->config.write_fn(i->output.samples, bytes_to_write, &i2s_bytes_written, portMAX_DELAY);
-            if(bytes_to_write != i2s_bytes_written) {
-                ESP_LOGE(TAG, "to write %d != written %d", bytes_to_write, i2s_bytes_written);
+            // NOTE: to aid transition in api, using write_fn2 based on write_ctx assignment
+            if (i->config.write_ctx)
+                i->config.write_fn2(i->output.samples, bytes_to_write, &bytes_written, portMAX_DELAY, i->config.write_ctx);
+            else
+                i->config.write_fn(i->output.samples, bytes_to_write, &bytes_written, portMAX_DELAY);
+
+            if(bytes_to_write != bytes_written) {
+                ESP_LOGE(TAG, "to write %d != written %d", bytes_to_write, bytes_written);
             }
         } else if(decode_status == DECODE_STATUS_NO_DATA_CONTINUE)
         {
@@ -404,8 +411,7 @@ clean_up:
     return ret;
 }
 
-static void audio_task(void *pvParam)
-{
+static void audio_task(void *pvParam) {
     audio_instance_t *i = static_cast<audio_instance_t*>(pvParam);
     audio_player_event_t audio_event;
 
@@ -450,13 +456,13 @@ static void audio_task(void *pvParam)
             }
         }
 
-        i->config.mute_fn(AUDIO_PLAYER_UNMUTE);
+        if (i->config.mute_fn) i->config.mute_fn(AUDIO_PLAYER_UNMUTE);
         esp_err_t ret_val = aplay_file(i, audio_event.fp);
         if(ret_val != ESP_OK)
         {
             ESP_LOGE(TAG, "aplay_file() %d", ret_val);
         }
-        i->config.mute_fn(AUDIO_PLAYER_MUTE);
+        if (i->config.mute_fn) i->config.mute_fn(AUDIO_PLAYER_MUTE);
 
         if(audio_event.fp) fclose(audio_event.fp);
     }
@@ -475,135 +481,203 @@ static esp_err_t audio_send_event(audio_instance_t *i, audio_player_event_t even
     return ESP_OK;
 }
 
-esp_err_t audio_player_play(FILE *fp)
-{
+/* ================= New multi-instance API ================= */
+
+esp_err_t audio_instance_play(audio_instance_handle_t h, FILE *fp) {
+    audio_instance_t *i = (audio_instance_t*)h;
+    CHECK_INSTANCE(i);
+
     LOGI_1("%s", __FUNCTION__);
     audio_player_event_t event = { .type = AUDIO_PLAYER_REQUEST_PLAY, .fp = fp };
-    return audio_send_event(&instance, event);
+    return audio_send_event(i, event);
 }
 
-esp_err_t audio_player_pause(void)
-{
+esp_err_t audio_instance_pause(audio_instance_handle_t h) {
+    audio_instance_t *i = (audio_instance_t*)h;
+    CHECK_INSTANCE(i);
+
     LOGI_1("%s", __FUNCTION__);
     audio_player_event_t event = { .type = AUDIO_PLAYER_REQUEST_PAUSE, .fp = NULL };
-    return audio_send_event(&instance, event);
+    return audio_send_event(i, event);
 }
 
-esp_err_t audio_player_resume(void)
-{
+esp_err_t audio_instance_resume(audio_instance_handle_t h) {
+    audio_instance_t *i = (audio_instance_t*)h;
+    CHECK_INSTANCE(i);
+
     LOGI_1("%s", __FUNCTION__);
     audio_player_event_t event = { .type = AUDIO_PLAYER_REQUEST_RESUME, .fp = NULL };
-    return audio_send_event(&instance, event);
+    return audio_send_event(i, event);
 }
 
-esp_err_t audio_player_stop(void)
-{
+esp_err_t audio_instance_stop(audio_instance_handle_t h) {
+    audio_instance_t *i = (audio_instance_t*)h;
+    CHECK_INSTANCE(i);
+
     LOGI_1("%s", __FUNCTION__);
     audio_player_event_t event = { .type = AUDIO_PLAYER_REQUEST_STOP, .fp = NULL };
-    return audio_send_event(&instance, event);
+    return audio_send_event(i, event);
 }
 
 /**
  * Can only shut down the playback thread if the thread is not presently playing audio.
  * Call audio_player_stop()
  */
-static esp_err_t _internal_audio_player_shutdown_thread(void)
-{
+static esp_err_t _internal_audio_player_shutdown_thread(audio_instance_t *i) {
+    CHECK_INSTANCE(i);
+
     LOGI_1("%s", __FUNCTION__);
     audio_player_event_t event = { .type = AUDIO_PLAYER_REQUEST_SHUTDOWN_THREAD, .fp = NULL };
-    return audio_send_event(&instance, event);
+    return audio_send_event(i, event);
 }
 
-static void cleanup_memory(audio_instance_t &i)
-{
+static void cleanup_memory(audio_instance_t *i) {
 #if defined(CONFIG_AUDIO_PLAYER_ENABLE_MP3)
-    if(i.mp3_decoder) MP3FreeDecoder(i.mp3_decoder);
-    if(i.mp3_data.data_buf) free(i.mp3_data.data_buf);
+    if(i->mp3_decoder) MP3FreeDecoder(i->mp3_decoder);
+    if(i->mp3_data.data_buf) free(i->mp3_data.data_buf);
 #endif
-    if(i.output.samples) free(i.output.samples);
+    if(i->output.samples) free(i->output.samples);
 
-    vQueueDelete(i.event_queue);
+    vQueueDelete(i->event_queue);
 }
 
-esp_err_t audio_player_new(audio_player_config_t config)
-{
+esp_err_t audio_instance_new(audio_instance_handle_t *h, audio_player_config_t *config) {
     BaseType_t task_val;
 
-    audio_instance_init(instance);
+    ESP_RETURN_ON_FALSE(h != NULL, ESP_ERR_INVALID_ARG, TAG, "handle pointer is NULL");
+    ESP_RETURN_ON_FALSE(*h == NULL, ESP_ERR_INVALID_ARG, TAG, "instance is not NULL");
+    ESP_RETURN_ON_FALSE(config, ESP_ERR_INVALID_ARG, TAG, "null config");
 
-    instance.config = config;
+    audio_instance_t *i = (audio_instance_t*)calloc(1, sizeof(audio_instance_t));
+    if (i == NULL) return ESP_ERR_NO_MEM;
+
+    audio_instance_init(i);
+
+    i->config = *config;
 
     /* Audio control event queue */
-    instance.event_queue = xQueueCreate(4, sizeof(audio_player_event_t));
-    ESP_RETURN_ON_FALSE(NULL != instance.event_queue, -1, TAG, "xQueueCreate");
+    i->event_queue = xQueueCreate(4, sizeof(audio_player_event_t));
+    ESP_RETURN_ON_FALSE(NULL != i->event_queue, -1, TAG, "xQueueCreate");
 
     /** See https://github.com/ultraembedded/libhelix-mp3/blob/0a0e0673f82bc6804e5a3ddb15fb6efdcde747cd/testwrap/main.c#L74 */
-    instance.output.samples_capacity = MAX_NCHAN * MAX_NGRAN * MAX_NSAMP;
-    instance.output.samples_capacity_max = instance.output.samples_capacity * 2;
-    instance.output.samples = static_cast<uint8_t*>(malloc(instance.output.samples_capacity_max));
-    LOGI_1("samples_capacity %d bytes", instance.output.samples_capacity_max);
+    i->output.samples_capacity = MAX_NCHAN * MAX_NGRAN * MAX_NSAMP;
+    i->output.samples_capacity_max = i->output.samples_capacity * 2;
+    i->output.samples = static_cast<uint8_t*>(malloc(i->output.samples_capacity_max));
+    LOGI_1("samples_capacity %d bytes", i->output.samples_capacity_max);
     int ret = ESP_OK;
-    ESP_GOTO_ON_FALSE(NULL != instance.output.samples, ESP_ERR_NO_MEM, cleanup,
+    ESP_GOTO_ON_FALSE(NULL != i->output.samples, ESP_ERR_NO_MEM, cleanup,
         TAG, "Failed allocate output buffer");
 
 #if defined(CONFIG_AUDIO_PLAYER_ENABLE_MP3)
-    instance.mp3_data.data_buf_size = MAINBUF_SIZE * 3;
-    instance.mp3_data.data_buf = static_cast<uint8_t*>(malloc(instance.mp3_data.data_buf_size));
-    ESP_GOTO_ON_FALSE(NULL != instance.mp3_data.data_buf, ESP_ERR_NO_MEM, cleanup,
+    i->mp3_data.data_buf_size = MAINBUF_SIZE * 3;
+    i->mp3_data.data_buf = static_cast<uint8_t*>(malloc(i->mp3_data.data_buf_size));
+    ESP_GOTO_ON_FALSE(NULL != i->mp3_data.data_buf, ESP_ERR_NO_MEM, cleanup,
         TAG, "Failed allocate mp3 data buffer");
 
-    instance.mp3_decoder = MP3InitDecoder();
-    ESP_GOTO_ON_FALSE(NULL != instance.mp3_decoder, ESP_ERR_NO_MEM, cleanup,
+    i->mp3_decoder = MP3InitDecoder();
+    ESP_GOTO_ON_FALSE(NULL != i->mp3_decoder, ESP_ERR_NO_MEM, cleanup,
         TAG, "Failed create MP3 decoder");
 #endif
 
-    memset(&instance.i2s_format, 0, sizeof(instance.i2s_format));
+    memset(&i->i2s_format, 0, sizeof(i->i2s_format));
 
-    instance.running = true;
+    i->running = true;
     task_val = xTaskCreatePinnedToCore(
         (TaskFunction_t)        audio_task,
                                 "Audio Task",
                                 4 * 1024,
-                                &instance,
-        (UBaseType_t)           instance.config.priority,
+                                i,
+        (UBaseType_t)           i->config.priority,
         (TaskHandle_t *)  NULL,
-        (BaseType_t)            instance.config.coreID);
+        (BaseType_t)            i->config.coreID);
 
     ESP_GOTO_ON_FALSE(pdPASS == task_val, ESP_ERR_NO_MEM, cleanup,
         TAG, "Failed create audio task");
 
     // start muted
-    instance.config.mute_fn(AUDIO_PLAYER_MUTE);
+    if (i->config.mute_fn)
+        i->config.mute_fn(AUDIO_PLAYER_MUTE);
 
+    *h = i;
     return ret;
 
 // At the moment when we run cppcheck there is a lack of esp-idf header files this
 // means cppcheck doesn't know that ESP_GOTO_ON_FALSE() etc are making use of this label
 // cppcheck-suppress unusedLabelConfiguration
 cleanup:
-    cleanup_memory(instance);
+    cleanup_memory(i);
+    free(i);
+    i = NULL;
 
     return ret;
 }
 
-esp_err_t audio_player_delete() {
+esp_err_t audio_instance_delete(audio_instance_handle_t h) {
+    audio_instance_t *i = (audio_instance_t*)h;
+    CHECK_INSTANCE(i);
+
     const int MAX_RETRIES = 5;
     int retries = MAX_RETRIES;
-    while(instance.running && retries) {
+    while(i->running && retries) {
         // stop any playback and shutdown the thread
-        audio_player_stop();
-        _internal_audio_player_shutdown_thread();
+        audio_instance_stop(i);
+        _internal_audio_player_shutdown_thread(i);
 
         vTaskDelay(pdMS_TO_TICKS(100));
         retries--;
     }
 
-    cleanup_memory(instance);
+    cleanup_memory(i);
+    free(i);
+    i = NULL;
 
     // if we ran out of retries, return fail code
     if(retries == 0) {
         return ESP_FAIL;
     }
 
+    return ESP_OK;
+}
+
+/* ================= Legacy API implemented via default instance ================= */
+
+audio_player_state_t audio_player_get_state() {
+    return audio_instance_get_state(g_instance);
+}
+
+esp_err_t audio_player_callback_register(audio_player_cb_t call_back, void *user_ctx) {
+    return audio_instance_callback_register(g_instance, call_back, user_ctx);
+}
+
+esp_err_t audio_player_play(FILE *fp) {
+    return audio_instance_play(g_instance, fp);
+}
+
+esp_err_t audio_player_pause() {
+    return audio_instance_pause(g_instance);
+}
+
+esp_err_t audio_player_resume() {
+    return audio_instance_resume(g_instance);
+}
+
+esp_err_t audio_player_stop() {
+    return audio_instance_stop(g_instance);
+}
+
+esp_err_t audio_player_new(audio_player_config_t config) {
+    if (g_instance) return ESP_OK;
+    config.force_stereo = true;    // preserve legacy behavior
+    audio_instance_handle_t h = NULL;
+    ESP_RETURN_ON_ERROR(audio_instance_new(&h, &config), TAG, "failed to create new audio instance");
+    g_instance = (audio_instance_t*)h;
+    return ESP_OK;
+}
+
+esp_err_t audio_player_delete() {
+    if (g_instance) {
+        audio_instance_delete(g_instance);
+        g_instance = NULL;
+    }
     return ESP_OK;
 }
