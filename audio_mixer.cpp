@@ -21,12 +21,13 @@
 
 static const char *TAG = "audio_mixer";
 
-static TaskHandle_t s_mixer_task = nullptr;
+static TaskHandle_t s_mixer_task = NULL;
 static audio_mixer_config_t s_cfg = {};
 static volatile bool s_running = false;
 static audio_mixer_cb_t s_mixer_user_cb = NULL;
 
 typedef struct audio_stream {
+    audio_stream_type_t type;
     char name[16];
     audio_instance_handle_t instance;
     QueueHandle_t file_queue;
@@ -54,7 +55,7 @@ static void mixer_task(void *arg) {
     const size_t bytes = frames * s_cfg.i2s_format.channels * sizeof(int16_t);
 
     int16_t *mix = (int16_t*)heap_caps_malloc(bytes, MALLOC_CAP_8BIT);
-    if (!mix) { vTaskDelete(nullptr); return; }
+    ESP_ERROR_CHECK(mix == NULL);
 
     while (s_running) {
         memset(mix, 0, bytes);
@@ -93,7 +94,7 @@ static void mixer_task(void *arg) {
     }
 
     free(mix);
-    vTaskDelete(nullptr);
+    vTaskDelete(NULL);
 }
 
 IRAM_ATTR static esp_err_t mixer_stream_write(void *data, size_t size, size_t *bytes_written, uint32_t timeout, void *stream) {
@@ -260,13 +261,42 @@ static void stream_purge_ringbuf(audio_stream_t *s) {
 }
 
 audio_player_state_t audio_stream_get_state(audio_stream_handle_t h) {
-    if (!h) return AUDIO_PLAYER_STATE_IDLE;
-    return audio_instance_get_state((audio_stream_t*)h->instance);
+    audio_stream_t *s = (audio_stream_t*)h;
+    if (!s) return AUDIO_PLAYER_STATE_IDLE;
+
+    /* DECODER stream? defer to the instance state */
+    if (s->type == AUDIO_STREAM_TYPE_DECODER) {
+        return audio_instance_get_state(s->instance);
+    }
+
+    /* RAW stream? check if ringbuf has data */
+    if (s->type == AUDIO_STREAM_TYPE_RAW) {
+        if (!s->pcm_rb) return AUDIO_PLAYER_STATE_IDLE;
+
+        // peek for any bytes
+        UBaseType_t items_waiting = 0;
+        vRingbufferGetInfo(s->pcm_rb, NULL, NULL, NULL, NULL, &items_waiting);
+
+        if (items_waiting > 0)
+            return AUDIO_PLAYER_STATE_PLAYING;
+    }
+
+    return AUDIO_PLAYER_STATE_IDLE;
+}
+
+audio_stream_type_t audio_stream_get_type(audio_stream_handle_t h) {
+    if (!h) return AUDIO_STREAM_TYPE_UNKNOWN;
+    return ((audio_stream_t*)h)->type;
 }
 
 esp_err_t audio_stream_play(audio_stream_handle_t h, FILE *fp) {
     audio_stream_t *s = (audio_stream_t*)h;
     CHECK_STREAM(s);
+
+    if (s->type != AUDIO_STREAM_TYPE_DECODER) {
+        ESP_LOGE(TAG, "stream '%s' is not a decoder stream", s->name);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
 
     // stop current playback?
     if (audio_instance_get_state(s->instance) == AUDIO_PLAYER_STATE_PLAYING)
@@ -282,6 +312,11 @@ esp_err_t audio_stream_queue(audio_stream_handle_t h, FILE *fp, bool play_now) {
 
     audio_stream_t *s = (audio_stream_t*)h;
     CHECK_STREAM(s);
+
+    if (s->type != AUDIO_STREAM_TYPE_DECODER) {
+        ESP_LOGE(TAG, "stream '%s' is not a decoder stream", s->name);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
 
     audio_mixer_lock();
 
@@ -309,15 +344,18 @@ esp_err_t audio_stream_queue(audio_stream_handle_t h, FILE *fp, bool play_now) {
 esp_err_t audio_stream_stop(audio_stream_handle_t h) {
     audio_stream_t *s = (audio_stream_t*)h;
     CHECK_STREAM(s);
-    esp_err_t err;
+    esp_err_t err = ESP_OK;
 
-    // clear any pending queue items
-    FILE *pending = NULL;
-    while (xQueueReceive(s->file_queue, &pending, 0) == pdTRUE) {
-        if (pending) fclose(pending);
+    if (s->type == AUDIO_STREAM_TYPE_DECODER) {
+        // clear any pending queue items
+        FILE *pending = NULL;
+        while (xQueueReceive(s->file_queue, &pending, 0) == pdTRUE) {
+            if (pending) fclose(pending);
+        }
+
+        err = audio_instance_stop(s->instance);
     }
 
-    err = audio_instance_stop(s->instance);
     stream_purge_ringbuf(s);
     return err;
 }
@@ -325,19 +363,42 @@ esp_err_t audio_stream_stop(audio_stream_handle_t h) {
 esp_err_t audio_stream_pause(audio_stream_handle_t h) {
     audio_stream_t *s = (audio_stream_t*)h;
     CHECK_STREAM(s);
+    if (s->type != AUDIO_STREAM_TYPE_DECODER) return ESP_ERR_NOT_SUPPORTED;
     return audio_instance_pause(s->instance);
 }
 
 esp_err_t audio_stream_resume(audio_stream_handle_t h) {
     audio_stream_t *s = (audio_stream_t*)h;
     CHECK_STREAM(s);
+    if (s->type != AUDIO_STREAM_TYPE_DECODER) return ESP_ERR_NOT_SUPPORTED;
     return audio_instance_resume(s->instance);
+}
+
+esp_err_t audio_stream_write_pcm(audio_stream_handle_t h, void *data, size_t size, uint32_t timeout_ms) {
+    audio_stream_t *s = (audio_stream_t*)h;
+    CHECK_STREAM(s);
+
+    if (s->type != AUDIO_STREAM_TYPE_RAW) {
+        ESP_LOGE(TAG, "stream '%s' is not a raw stream", s->name);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    if (!s->pcm_rb) return ESP_ERR_INVALID_STATE;
+
+    // Send data to the ring buffer (BYTEBUF type)
+    BaseType_t res = xRingbufferSend(s->pcm_rb, data, size, pdMS_TO_TICKS(timeout_ms));
+    if (res != pdTRUE) {
+        ESP_LOGW(TAG, "stream '%s' overflow", s->name);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }
 
 audio_stream_handle_t audio_stream_new(audio_stream_config_t *cfg) {
     ESP_RETURN_ON_FALSE(cfg, NULL, TAG, "null config");
 
     audio_stream_t *stream = (audio_stream_t*)calloc(1, sizeof(audio_stream_t));
+    stream->type = cfg->type;
 
     /* use provided name? */
     if (cfg->name[0] != '\0') {
@@ -349,36 +410,42 @@ audio_stream_handle_t audio_stream_new(audio_stream_config_t *cfg) {
         snprintf(stream->name, sizeof(stream->name), "stream_%lu", s_stream_name_counter++);
     }
 
-    /* create player instance */
-    audio_player_config_t instance_cfg;
-    instance_cfg.mute_fn = NULL;
-    instance_cfg.clk_set_fn = mixer_stream_clk_set_fn;
-    instance_cfg.coreID = cfg->coreID;
-    instance_cfg.priority = cfg->priority;
-    instance_cfg.force_stereo = false;
-    instance_cfg.write_fn2 = mixer_stream_write;
-    instance_cfg.write_ctx = stream;
+    /* DECODER type stream? create a player instance and queue */
+    if (cfg->type == AUDIO_STREAM_TYPE_DECODER) {
+        // new player instance
+        audio_player_config_t instance_cfg;
+        instance_cfg.mute_fn = NULL;
+        instance_cfg.clk_set_fn = mixer_stream_clk_set_fn;
+        instance_cfg.coreID = cfg->coreID;
+        instance_cfg.priority = cfg->priority;
+        instance_cfg.force_stereo = false;
+        instance_cfg.write_fn2 = mixer_stream_write;
+        instance_cfg.write_ctx = stream;
 
-    audio_instance_handle_t h = NULL;
-    esp_err_t err = audio_instance_new(&h, &instance_cfg);
+        audio_instance_handle_t h = NULL;
+        esp_err_t err = audio_instance_new(&h, &instance_cfg);
 
-    if (err != ESP_OK) {
-        free(stream);
-        return NULL;
+        if (err != ESP_OK) {
+            free(stream);
+            return NULL;
+        }
+        stream->instance = h;
+
+        // create file queue & attach event handler
+        stream->file_queue = xQueueCreate(4, sizeof(FILE*));
+        audio_instance_callback_register(stream->instance, mixer_stream_event_handler, stream);
     }
-    stream->instance = h;
 
-    /* create stream's ringbuffer, file queue */
-    stream->file_queue = xQueueCreate(4, sizeof(FILE*));
+    /* always create a ringbuffer */
     stream->pcm_rb = xRingbufferCreate(16 * 1024, RINGBUF_TYPE_BYTEBUF);
-    if (!stream->file_queue || !stream->pcm_rb) {
+
+    if (!stream->pcm_rb || (cfg->type == AUDIO_STREAM_TYPE_DECODER && !stream->file_queue)) {
         if (stream->file_queue) vQueueDelete(stream->file_queue);
         if (stream->pcm_rb) vRingbufferDelete(stream->pcm_rb);
+        if (stream->instance) audio_instance_delete(stream->instance);
         free(stream);
         return NULL;
     }
-
-    audio_instance_callback_register(stream->instance, mixer_stream_event_handler, stream);
 
     /* add to stream tracking */
     audio_mixer_add_stream(stream);
