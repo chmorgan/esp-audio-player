@@ -39,10 +39,10 @@ void audio_mixer_lock();
 void audio_mixer_unlock();
 
 /** Add a stream to the mixer's processing list (Thread safe). */
-void audio_mixer_add_stream(audio_stream_handle_t stream);
+void audio_mixer_add_stream(audio_stream_handle_t h);
 
 /** Remove a stream from the mixer's processing list (Thread safe). */
-void audio_mixer_remove_stream(audio_stream_handle_t stream);
+void audio_mixer_remove_stream(audio_stream_handle_t h);
 
 /** Query the current mixer output format. Returns zeros if not initialized. */
 void audio_mixer_get_output_format(uint32_t *sample_rate, uint32_t *bits_per_sample, uint32_t *channels);

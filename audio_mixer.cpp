@@ -184,16 +184,16 @@ inline void audio_mixer_unlock() {
     if (s_stream_mutex) xSemaphoreGive(s_stream_mutex);
 }
 
-void audio_mixer_add_stream(audio_stream_handle_t stream) {
+void audio_mixer_add_stream(audio_stream_handle_t h) {
     audio_mixer_lock();
-    SLIST_INSERT_HEAD(&s_stream_list, (audio_stream_t*)stream, next);
+    SLIST_INSERT_HEAD(&s_stream_list, (audio_stream_t*)h, next);
     s_active_streams++;
     audio_mixer_unlock();
 }
 
-void audio_mixer_remove_stream(audio_stream_handle_t stream) {
+void audio_mixer_remove_stream(audio_stream_handle_t h) {
     audio_mixer_lock();
-    SLIST_REMOVE(&s_stream_list, (audio_stream_t*)stream, audio_stream, next);
+    SLIST_REMOVE(&s_stream_list, (audio_stream_t*)h, audio_stream, next);
     if (s_active_streams > 0) s_active_streams--;
     audio_mixer_unlock();
 }
@@ -259,8 +259,13 @@ static void stream_purge_ringbuf(audio_stream_t *s) {
     }
 }
 
-esp_err_t audio_stream_play(audio_stream_handle_t sh, FILE *fp) {
-    audio_stream_t *s = (audio_stream_t*)sh;
+audio_player_state_t audio_stream_get_state(audio_stream_handle_t h) {
+    if (!h) return AUDIO_PLAYER_STATE_IDLE;
+    return audio_instance_get_state((audio_stream_t*)h->instance);
+}
+
+esp_err_t audio_stream_play(audio_stream_handle_t h, FILE *fp) {
+    audio_stream_t *s = (audio_stream_t*)h;
     CHECK_STREAM(s);
 
     // stop current playback?
@@ -270,12 +275,12 @@ esp_err_t audio_stream_play(audio_stream_handle_t sh, FILE *fp) {
     return audio_instance_play(s->instance, fp);
 }
 
-esp_err_t audio_stream_queue(audio_stream_handle_t sh, FILE *fp, bool play_now) {
+esp_err_t audio_stream_queue(audio_stream_handle_t h, FILE *fp, bool play_now) {
     if (play_now) {
-        return audio_stream_play(sh, fp);
+        return audio_stream_play(h, fp);
     }
 
-    audio_stream_t *s = (audio_stream_t*)sh;
+    audio_stream_t *s = (audio_stream_t*)h;
     CHECK_STREAM(s);
 
     audio_mixer_lock();
@@ -301,8 +306,8 @@ esp_err_t audio_stream_queue(audio_stream_handle_t sh, FILE *fp, bool play_now) 
     return ESP_OK;
 }
 
-esp_err_t audio_stream_stop(audio_stream_handle_t sh) {
-    audio_stream_t *s = (audio_stream_t*)sh;
+esp_err_t audio_stream_stop(audio_stream_handle_t h) {
+    audio_stream_t *s = (audio_stream_t*)h;
     CHECK_STREAM(s);
     esp_err_t err;
 
@@ -317,22 +322,16 @@ esp_err_t audio_stream_stop(audio_stream_handle_t sh) {
     return err;
 }
 
-esp_err_t audio_stream_pause(audio_stream_handle_t sh) {
-    audio_stream_t *s = (audio_stream_t*)sh;
+esp_err_t audio_stream_pause(audio_stream_handle_t h) {
+    audio_stream_t *s = (audio_stream_t*)h;
     CHECK_STREAM(s);
     return audio_instance_pause(s->instance);
 }
 
-esp_err_t audio_stream_resume(audio_stream_handle_t sh) {
-    audio_stream_t *s = (audio_stream_t*)sh;
+esp_err_t audio_stream_resume(audio_stream_handle_t h) {
+    audio_stream_t *s = (audio_stream_t*)h;
     CHECK_STREAM(s);
     return audio_instance_resume(s->instance);
-}
-
-audio_player_state_t audio_stream_get_state(audio_stream_handle_t sh) {
-    audio_stream_t *s = (audio_stream_t*)sh;
-    if (!s) return AUDIO_PLAYER_STATE_IDLE;
-    return audio_instance_get_state(s->instance);
 }
 
 audio_stream_handle_t audio_stream_new(audio_stream_config_t *cfg) {
@@ -389,8 +388,8 @@ audio_stream_handle_t audio_stream_new(audio_stream_config_t *cfg) {
     return (audio_stream_handle_t)stream;
 }
 
-esp_err_t audio_stream_delete(audio_stream_handle_t sh) {
-    audio_stream_t *s = (audio_stream_t*)sh;
+esp_err_t audio_stream_delete(audio_stream_handle_t h) {
+    audio_stream_t *s = (audio_stream_t*)h;
     CHECK_STREAM(s);
 
     /* remove from stream tracking */
