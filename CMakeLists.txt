@@ -1,6 +1,7 @@
 
 set(srcs
     "audio_player.cpp"
+    "audio_mixer.cpp"
 )
 
 set(includes
