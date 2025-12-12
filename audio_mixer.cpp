@@ -32,6 +32,7 @@ typedef struct audio_stream {
     audio_instance_handle_t instance;
     QueueHandle_t file_queue;
     RingbufHandle_t pcm_rb;
+    audio_player_state_t state;  // used only for RAW stream types.
 
     SLIST_ENTRY(audio_stream) next;
 } audio_stream_t;
@@ -255,6 +256,26 @@ void audio_mixer_deinit() {
 
 /* ================= Stream (mixer channel) API ================= */
 
+extern const char* event_to_string(audio_player_callback_event_t event);          // from audio_player.c
+extern audio_player_callback_event_t state_to_event(audio_player_state_t state);  // from audio_player.c
+
+
+static void dispatch_callback(audio_stream_t *s, audio_player_callback_event_t event) {
+    ESP_LOGD(TAG, "event '%s'", event_to_string(event));
+
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
+    if (esp_ptr_executable(reinterpret_cast<void*>(s_mixer_user_cb))) {
+#else
+    if (reinterpret_cast<void*>(s_mixer_user_cb)) {
+#endif
+        audio_player_cb_ctx_t ctx = {
+            .audio_event = event,
+            .user_ctx = s,
+        };
+        s_mixer_user_cb(&ctx);
+    }
+}
+
 static void stream_purge_ringbuf(audio_stream_t *s) {
     if (!s || !s->pcm_rb) return;
 
@@ -263,6 +284,37 @@ static void stream_purge_ringbuf(audio_stream_t *s) {
     while ((item = xRingbufferReceive(s->pcm_rb, &item_size, 0)) != NULL) {
         vRingbufferReturnItem(s->pcm_rb, item);
     }
+}
+
+esp_err_t audio_stream_raw_send_event(audio_stream_handle_t h, audio_player_callback_event_t event) {
+    audio_stream_t *s = (audio_stream_t*)h;
+    CHECK_STREAM(s);
+
+    if (s->type != AUDIO_STREAM_TYPE_RAW) return ESP_ERR_NOT_SUPPORTED;
+
+    // NOTE: essentially made event_to_state()
+    audio_player_state_t new_state = AUDIO_PLAYER_STATE_IDLE;
+    switch (event) {
+        case AUDIO_PLAYER_CALLBACK_EVENT_IDLE:
+            new_state = AUDIO_PLAYER_STATE_IDLE;
+            break;
+        case AUDIO_PLAYER_CALLBACK_EVENT_PLAYING:
+        case AUDIO_PLAYER_CALLBACK_EVENT_COMPLETED_PLAYING_NEXT:
+            new_state = AUDIO_PLAYER_STATE_PLAYING;
+            break;
+        case AUDIO_PLAYER_CALLBACK_EVENT_SHUTDOWN:
+            new_state = AUDIO_PLAYER_STATE_SHUTDOWN;
+            break;
+        default:
+            new_state = AUDIO_PLAYER_STATE_IDLE;
+            break;
+    }
+
+    if(s->state != new_state) {
+        s->state = new_state;
+        dispatch_callback(s, event);
+    }
+    return ESP_OK;
 }
 
 audio_player_state_t audio_stream_get_state(audio_stream_handle_t h) {
@@ -276,14 +328,15 @@ audio_player_state_t audio_stream_get_state(audio_stream_handle_t h) {
 
     /* RAW stream? check if ringbuf has data */
     if (s->type == AUDIO_STREAM_TYPE_RAW) {
-        if (!s->pcm_rb) return AUDIO_PLAYER_STATE_IDLE;
-
-        // peek for any bytes
-        UBaseType_t items_waiting = 0;
-        vRingbufferGetInfo(s->pcm_rb, NULL, NULL, NULL, NULL, &items_waiting);
-
-        if (items_waiting > 0)
-            return AUDIO_PLAYER_STATE_PLAYING;
+        // if (!s->pcm_rb) return AUDIO_PLAYER_STATE_IDLE;
+        //
+        // // peek for any bytes
+        // UBaseType_t items_waiting = 0;
+        // vRingbufferGetInfo(s->pcm_rb, NULL, NULL, NULL, NULL, &items_waiting);
+        //
+        // if (items_waiting > 0)
+        //     return AUDIO_PLAYER_STATE_PLAYING;
+        return s->state;
     }
 
     return AUDIO_PLAYER_STATE_IDLE;

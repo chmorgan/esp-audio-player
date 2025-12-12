@@ -146,7 +146,7 @@ const char* event_to_string(audio_player_callback_event_t event) {
     return "unknown event";
 }
 
-static audio_player_callback_event_t state_to_event(audio_player_state_t state) {
+audio_player_callback_event_t state_to_event(audio_player_state_t state) {
     audio_player_callback_event_t event = AUDIO_PLAYER_CALLBACK_EVENT_UNKNOWN;
 
     switch(state) {

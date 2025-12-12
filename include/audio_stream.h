@@ -49,6 +49,7 @@ esp_err_t audio_stream_resume(audio_stream_handle_t h);
  * Data format must match the mixer configuration (e.g. 44.1kHz, 16-bit, mono).
  */
 esp_err_t audio_stream_write_pcm(audio_stream_handle_t h, void *data, size_t size, uint32_t timeout_ms);
+esp_err_t audio_stream_raw_send_event(audio_stream_handle_t h, audio_player_callback_event_t event);
 
 audio_stream_handle_t audio_stream_new(audio_stream_config_t *cfg);
 esp_err_t audio_stream_delete(audio_stream_handle_t h);
