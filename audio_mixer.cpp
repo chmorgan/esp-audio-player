@@ -229,11 +229,16 @@ esp_err_t audio_mixer_init(audio_mixer_config_t *cfg) {
     return ESP_OK;
 }
 
+bool audio_mixer_is_initialized() {
+    return s_mixer_task != NULL;
+}
+
 void audio_mixer_deinit() {
     if (!s_running) return;
 
-    s_running = false;
     // Task will exit on next loop; no join primitive in FreeRTOS here.
+    s_running = false;
+    s_mixer_task = NULL;
 
     // Clean up any remaining channels (safe teardown)
     audio_mixer_lock();

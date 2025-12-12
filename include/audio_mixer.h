@@ -49,6 +49,8 @@ void audio_mixer_get_output_format(uint32_t *sample_rate, uint32_t *bits_per_sam
 
 void audio_mixer_callback_register(audio_mixer_cb_t cb);
 
+bool audio_mixer_is_initialized();
+
 /** Initialize the mixer with fixed output format and start the mixer task. */
 esp_err_t audio_mixer_init(audio_mixer_config_t *cfg);
 
