@@ -1,5 +1,7 @@
 #pragma once
 
+#include "audio_player.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
