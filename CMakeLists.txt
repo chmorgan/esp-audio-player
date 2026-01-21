@@ -8,7 +8,13 @@ set(includes
     "include"
 )
 
-set(requires "")
+set(requires)
+
+if("${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" VERSION_GREATER_EQUAL "5.3")
+    list(APPEND requires esp_driver_i2s esp_ringbuf)
+else()
+    list(APPEND requires driver)
+endif()
 
 if(CONFIG_AUDIO_PLAYER_ENABLE_MP3)
     list(APPEND srcs "audio_mp3.cpp")
@@ -22,7 +28,6 @@ if(CONFIG_AUDIO_PLAYER_ENABLE_WAV)
 endif()
 
 idf_component_register(SRCS "${srcs}"
-                       REQUIRES "${requires}"
                        INCLUDE_DIRS "${includes}"
-                       REQUIRES driver
+                       REQUIRES "${requires}"
 )
