@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include "esp_log.h"
 #include "esp_check.h"
 #include "unity.h"
@@ -185,8 +186,10 @@ TEST_CASE("audio mixer handles multiple streams and output format", "[audio mixe
 
     audio_stream_config_t s1_cfg = DEFAULT_AUDIO_STREAM_CONFIG("s1");
     audio_stream_handle_t s1 = audio_stream_new(&s1_cfg);
+    (void)s1;
     audio_stream_config_t s2_cfg = DEFAULT_AUDIO_STREAM_CONFIG("s2");
     audio_stream_handle_t s2 = audio_stream_new(&s2_cfg);
+    (void)s2;
 
     TEST_ASSERT_EQUAL(2, audio_mixer_stream_count());
 
@@ -256,7 +259,7 @@ TEST_CASE("audio mixer plays sample mp3 on multiple streams", "[audio mixer]")
 
     extern const char mp3_start[] asm("_binary_gs_16b_1c_44100hz_mp3_start");
     extern const char mp3_end[]   asm("_binary_gs_16b_1c_44100hz_mp3_end");
-    size_t mp3_size = (mp3_end - mp3_start) - 1;
+    size_t mp3_size = (size_t)((uintptr_t)mp3_end - (uintptr_t)mp3_start);
 
     // Create two streams
     audio_stream_config_t s1_cfg = DEFAULT_AUDIO_STREAM_CONFIG("stream1");

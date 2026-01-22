@@ -102,7 +102,7 @@ typedef struct audio_instance {
 static audio_instance_t *g_instance = NULL;  // when non-null, in legacy non-mixer mode
 
 audio_player_state_t audio_instance_get_state(audio_instance_handle_t h) {
-    audio_instance_t *i = (audio_instance_t*)h;
+    audio_instance_t *i = static_cast<audio_instance_t *>(h);
     return i ? i->state : AUDIO_PLAYER_STATE_IDLE;
 }
 
@@ -114,7 +114,7 @@ esp_err_t audio_instance_callback_register(audio_instance_handle_t h, audio_play
     ESP_RETURN_ON_FALSE(reinterpret_cast<void*>(call_back), ESP_ERR_INVALID_ARG,
         TAG, "Not a valid call back");
 #endif
-    audio_instance_t *i = (audio_instance_t*)h;
+    audio_instance_t *i = static_cast<audio_instance_t *>(h);
     CHECK_INSTANCE(i);
     i->s_audio_cb = call_back;
     i->audio_cb_usrt_ctx = user_ctx;
@@ -484,7 +484,7 @@ static esp_err_t audio_send_event(audio_instance_t *i, audio_player_event_t even
 /* ================= New multi-instance API ================= */
 
 esp_err_t audio_instance_play(audio_instance_handle_t h, FILE *fp) {
-    audio_instance_t *i = (audio_instance_t*)h;
+    audio_instance_t *i = static_cast<audio_instance_t *>(h);
     CHECK_INSTANCE(i);
 
     LOGI_1("%s", __FUNCTION__);
@@ -493,7 +493,7 @@ esp_err_t audio_instance_play(audio_instance_handle_t h, FILE *fp) {
 }
 
 esp_err_t audio_instance_pause(audio_instance_handle_t h) {
-    audio_instance_t *i = (audio_instance_t*)h;
+    audio_instance_t *i = static_cast<audio_instance_t *>(h);
     CHECK_INSTANCE(i);
 
     LOGI_1("%s", __FUNCTION__);
@@ -502,7 +502,7 @@ esp_err_t audio_instance_pause(audio_instance_handle_t h) {
 }
 
 esp_err_t audio_instance_resume(audio_instance_handle_t h) {
-    audio_instance_t *i = (audio_instance_t*)h;
+    audio_instance_t *i = static_cast<audio_instance_t *>(h);
     CHECK_INSTANCE(i);
 
     LOGI_1("%s", __FUNCTION__);
@@ -511,7 +511,7 @@ esp_err_t audio_instance_resume(audio_instance_handle_t h) {
 }
 
 esp_err_t audio_instance_stop(audio_instance_handle_t h) {
-    audio_instance_t *i = (audio_instance_t*)h;
+    audio_instance_t *i = static_cast<audio_instance_t *>(h);
     CHECK_INSTANCE(i);
 
     LOGI_1("%s", __FUNCTION__);
@@ -548,7 +548,7 @@ esp_err_t audio_instance_new(audio_instance_handle_t *h, audio_player_config_t *
     ESP_RETURN_ON_FALSE(*h == NULL, ESP_ERR_INVALID_ARG, TAG, "instance is not NULL");
     ESP_RETURN_ON_FALSE(config, ESP_ERR_INVALID_ARG, TAG, "null config");
 
-    audio_instance_t *i = (audio_instance_t*)calloc(1, sizeof(audio_instance_t));
+    audio_instance_t *i = static_cast<audio_instance_t *>(calloc(1, sizeof(audio_instance_t)));
     if (i == NULL) return ESP_ERR_NO_MEM;
 
     audio_instance_init(i);
@@ -613,7 +613,7 @@ cleanup:
 }
 
 esp_err_t audio_instance_delete(audio_instance_handle_t h) {
-    audio_instance_t *i = (audio_instance_t*)h;
+    audio_instance_t *i = static_cast<audio_instance_t *>(h);
     CHECK_INSTANCE(i);
 
     const int MAX_RETRIES = 5;
@@ -670,7 +670,7 @@ esp_err_t audio_player_new(audio_player_config_t config) {
     config.force_stereo = true;    // preserve legacy behavior
     audio_instance_handle_t h = NULL;
     ESP_RETURN_ON_ERROR(audio_instance_new(&h, &config), TAG, "failed to create new audio instance");
-    g_instance = (audio_instance_t*)h;
+    g_instance = static_cast<audio_instance_t *>(h);
     return ESP_OK;
 }
 

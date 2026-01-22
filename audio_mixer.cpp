@@ -55,7 +55,7 @@ static void mixer_task(void *arg) {
     const size_t frames = 512; // tune as needed
     const size_t bytes = frames * s_cfg.i2s_format.channels * sizeof(int16_t);
 
-    int16_t *mix = (int16_t*)heap_caps_malloc(bytes, MALLOC_CAP_8BIT);
+    int16_t *mix = static_cast<int16_t *>(heap_caps_malloc(bytes, MALLOC_CAP_8BIT));
     ESP_ERROR_CHECK(mix == NULL);
 
     while (s_running) {
@@ -71,7 +71,7 @@ static void mixer_task(void *arg) {
             void *item = xRingbufferReceiveUpTo(stream->pcm_rb, &received_bytes, pdMS_TO_TICKS(5), bytes);
 
             if (item && received_bytes > 0) {
-                int16_t *samples = (int16_t*)item;
+                int16_t *samples = static_cast<int16_t *>(item);
                 size_t count = received_bytes / sizeof(int16_t);
 
                 for (size_t k = 0; k < count; ++k) {
@@ -99,7 +99,7 @@ static void mixer_task(void *arg) {
 }
 
 IRAM_ATTR static esp_err_t mixer_stream_write(void *data, size_t size, size_t *bytes_written, uint32_t timeout, void *stream) {
-    audio_stream_t *s = (audio_stream_t*)stream;
+    audio_stream_t *s = static_cast<audio_stream_t *>(stream);
     if (!s || !s->pcm_rb) {
         if (bytes_written) *bytes_written = 0;
         return ESP_ERR_INVALID_ARG;
@@ -138,7 +138,7 @@ static esp_err_t mixer_stream_clk_set_fn(uint32_t rate, uint32_t bits_cfg, i2s_s
 static void mixer_stream_event_handler(audio_player_cb_ctx_t *ctx) {
     if (!ctx || !ctx->user_ctx) return;
 
-    audio_stream_t *s = (audio_stream_t *)ctx->user_ctx;
+    audio_stream_t *s = static_cast<audio_stream_t *>(ctx->user_ctx);
 
     // handle auto-queueing
     if (ctx->audio_event == AUDIO_PLAYER_CALLBACK_EVENT_IDLE) {
@@ -188,14 +188,14 @@ inline void audio_mixer_unlock() {
 
 void audio_mixer_add_stream(audio_stream_handle_t h) {
     audio_mixer_lock();
-    SLIST_INSERT_HEAD(&s_stream_list, (audio_stream_t*)h, next);
+    SLIST_INSERT_HEAD(&s_stream_list, static_cast<audio_stream_t*>(h), next);
     s_active_streams++;
     audio_mixer_unlock();
 }
 
 void audio_mixer_remove_stream(audio_stream_handle_t h) {
     audio_mixer_lock();
-    SLIST_REMOVE(&s_stream_list, (audio_stream_t*)h, audio_stream, next);
+    SLIST_REMOVE(&s_stream_list, static_cast<audio_stream_t*>(h), audio_stream, next);
     if (s_active_streams > 0) s_active_streams--;
     audio_mixer_unlock();
 }
@@ -256,10 +256,6 @@ void audio_mixer_deinit() {
 
 /* ================= Stream (mixer channel) API ================= */
 
-extern const char* event_to_string(audio_player_callback_event_t event);          // from audio_player.c
-extern audio_player_callback_event_t state_to_event(audio_player_state_t state);  // from audio_player.c
-
-
 static void dispatch_callback(audio_stream_t *s, audio_player_callback_event_t event) {
     ESP_LOGD(TAG, "event '%s'", event_to_string(event));
 
@@ -287,7 +283,7 @@ static void stream_purge_ringbuf(audio_stream_t *s) {
 }
 
 esp_err_t audio_stream_raw_send_event(audio_stream_handle_t h, audio_player_callback_event_t event) {
-    audio_stream_t *s = (audio_stream_t*)h;
+    audio_stream_t *s = h;
     CHECK_STREAM(s);
 
     if (s->type != AUDIO_STREAM_TYPE_RAW) return ESP_ERR_NOT_SUPPORTED;
@@ -318,7 +314,7 @@ esp_err_t audio_stream_raw_send_event(audio_stream_handle_t h, audio_player_call
 }
 
 audio_player_state_t audio_stream_get_state(audio_stream_handle_t h) {
-    audio_stream_t *s = (audio_stream_t*)h;
+    audio_stream_t *s = h;
     if (!s) return AUDIO_PLAYER_STATE_IDLE;
 
     /* DECODER stream? defer to the instance state */
@@ -346,11 +342,11 @@ audio_player_state_t audio_stream_get_state(audio_stream_handle_t h) {
 
 audio_stream_type_t audio_stream_get_type(audio_stream_handle_t h) {
     if (!h) return AUDIO_STREAM_TYPE_UNKNOWN;
-    return ((audio_stream_t*)h)->type;
+    return h->type;
 }
 
 esp_err_t audio_stream_play(audio_stream_handle_t h, FILE *fp) {
-    audio_stream_t *s = (audio_stream_t*)h;
+    audio_stream_t *s = h;
     CHECK_STREAM(s);
 
     if (s->type != AUDIO_STREAM_TYPE_DECODER) {
@@ -370,7 +366,7 @@ esp_err_t audio_stream_queue(audio_stream_handle_t h, FILE *fp, bool play_now) {
         return audio_stream_play(h, fp);
     }
 
-    audio_stream_t *s = (audio_stream_t*)h;
+    audio_stream_t *s = h;
     CHECK_STREAM(s);
 
     if (s->type != AUDIO_STREAM_TYPE_DECODER) {
@@ -402,7 +398,7 @@ esp_err_t audio_stream_queue(audio_stream_handle_t h, FILE *fp, bool play_now) {
 }
 
 esp_err_t audio_stream_stop(audio_stream_handle_t h) {
-    audio_stream_t *s = (audio_stream_t*)h;
+    audio_stream_t *s = h;
     CHECK_STREAM(s);
     esp_err_t err = ESP_OK;
 
@@ -421,21 +417,21 @@ esp_err_t audio_stream_stop(audio_stream_handle_t h) {
 }
 
 esp_err_t audio_stream_pause(audio_stream_handle_t h) {
-    audio_stream_t *s = (audio_stream_t*)h;
+    audio_stream_t *s = h;
     CHECK_STREAM(s);
     if (s->type != AUDIO_STREAM_TYPE_DECODER) return ESP_ERR_NOT_SUPPORTED;
     return audio_instance_pause(s->instance);
 }
 
 esp_err_t audio_stream_resume(audio_stream_handle_t h) {
-    audio_stream_t *s = (audio_stream_t*)h;
+    audio_stream_t *s = h;
     CHECK_STREAM(s);
     if (s->type != AUDIO_STREAM_TYPE_DECODER) return ESP_ERR_NOT_SUPPORTED;
     return audio_instance_resume(s->instance);
 }
 
 esp_err_t audio_stream_write_pcm(audio_stream_handle_t h, void *data, size_t size, uint32_t timeout_ms) {
-    audio_stream_t *s = (audio_stream_t*)h;
+    audio_stream_t *s = h;
     CHECK_STREAM(s);
 
     if (s->type != AUDIO_STREAM_TYPE_RAW) {
@@ -457,7 +453,7 @@ esp_err_t audio_stream_write_pcm(audio_stream_handle_t h, void *data, size_t siz
 audio_stream_handle_t audio_stream_new(audio_stream_config_t *cfg) {
     ESP_RETURN_ON_FALSE(cfg, NULL, TAG, "null config");
 
-    audio_stream_t *stream = (audio_stream_t*)calloc(1, sizeof(audio_stream_t));
+    audio_stream_t *stream = static_cast<audio_stream_t *>(calloc(1, sizeof(audio_stream_t)));
     stream->type = cfg->type;
 
     /* use provided name? */
@@ -467,7 +463,7 @@ audio_stream_handle_t audio_stream_new(audio_stream_config_t *cfg) {
     }
     /* otherwise, generate a unique monotonic name */
     else {
-        snprintf(stream->name, sizeof(stream->name), "stream_%lu", s_stream_name_counter++);
+        snprintf(stream->name, sizeof(stream->name), "stream_%lu", static_cast<unsigned long>(s_stream_name_counter++));
     }
 
     /* DECODER type stream? create a player instance and queue */
@@ -512,11 +508,11 @@ audio_stream_handle_t audio_stream_new(audio_stream_config_t *cfg) {
 
     ESP_LOGI(TAG, "Created stream '%s' (active: %u)", stream->name, audio_mixer_stream_count());
 
-    return (audio_stream_handle_t)stream;
+    return stream;
 }
 
 esp_err_t audio_stream_delete(audio_stream_handle_t h) {
-    audio_stream_t *s = (audio_stream_t*)h;
+    audio_stream_t *s = h;
     CHECK_STREAM(s);
 
     /* remove from stream tracking */
