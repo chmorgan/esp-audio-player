@@ -328,6 +328,8 @@ audio_player_state_t audio_stream_get_state(audio_stream_handle_t h) {
 
     /* RAW stream? check if ringbuf has data */
     if (s->type == AUDIO_STREAM_TYPE_RAW) {
+        // TODO: determine if checking ringbuf is valuable vs. having a stream emit its own state
+        //       using the method audio_stream_raw_send_event().
         // if (!s->pcm_rb) return AUDIO_PLAYER_STATE_IDLE;
         //
         // // peek for any bytes
