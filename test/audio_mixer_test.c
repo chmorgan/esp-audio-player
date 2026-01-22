@@ -301,3 +301,53 @@ TEST_CASE("audio mixer plays sample mp3 on multiple streams", "[audio mixer]")
     vQueueDelete(mixer_event_queue);
     bsp_audio_deinit();
 }
+
+TEST_CASE("audio stream pause and resume", "[audio mixer]")
+{
+    audio_stream_config_t stream_cfg = DEFAULT_AUDIO_STREAM_CONFIG("pause_resume");
+    audio_stream_handle_t s = audio_stream_new(&stream_cfg);
+    TEST_ASSERT_NOT_NULL(s);
+
+    TEST_ESP_OK(audio_stream_pause(s));
+    TEST_ASSERT_EQUAL(AUDIO_PLAYER_STATE_PAUSE, audio_stream_get_state(s));
+
+    TEST_ESP_OK(audio_stream_resume(s));
+    TEST_ASSERT_EQUAL(AUDIO_PLAYER_STATE_PLAYING, audio_stream_get_state(s));
+
+    TEST_ESP_OK(audio_stream_delete(s));
+}
+
+TEST_CASE("audio stream queue", "[audio mixer]")
+{
+    audio_stream_config_t stream_cfg = DEFAULT_AUDIO_STREAM_CONFIG("queue");
+    audio_stream_handle_t s = audio_stream_new(&stream_cfg);
+    TEST_ASSERT_NOT_NULL(s);
+
+    extern const char mp3_start[] asm("_binary_gs_16b_1c_44100hz_mp3_start");
+    extern const char mp3_end[]   asm("_binary_gs_16b_1c_44100hz_mp3_end");
+    size_t mp3_size = (size_t)((uintptr_t)mp3_end - (uintptr_t)mp3_start);
+
+    FILE *f1 = fmemopen((void*)mp3_start, mp3_size, "rb");
+    TEST_ASSERT_NOT_NULL(f1);
+
+    TEST_ESP_OK(audio_stream_queue(s, f1, false));
+
+    TEST_ESP_OK(audio_stream_delete(s));
+}
+
+TEST_CASE("audio stream write pcm", "[audio mixer]")
+{
+    audio_stream_config_t raw_cfg = {
+        .type = AUDIO_STREAM_TYPE_RAW,
+        .name = "raw_write",
+        .priority = 5,
+        .coreID = 0
+    };
+    audio_stream_handle_t s = audio_stream_new(&raw_cfg);
+    TEST_ASSERT_NOT_NULL(s);
+
+    int16_t dummy_pcm[128] = {0};
+    TEST_ESP_OK(audio_stream_write_pcm(s, dummy_pcm, sizeof(dummy_pcm), 100));
+
+    TEST_ESP_OK(audio_stream_delete(s));
+}

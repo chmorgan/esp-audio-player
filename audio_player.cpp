@@ -122,9 +122,6 @@ esp_err_t audio_instance_callback_register(audio_instance_handle_t h, audio_play
     return ESP_OK;
 }
 
-// This function is used in some optional logging functions so we don't want to
-// have a cppcheck warning here
-// cppcheck-suppress unusedFunction
 const char* event_to_string(audio_player_callback_event_t event) {
     switch(event) {
     case AUDIO_PLAYER_CALLBACK_EVENT_IDLE:
