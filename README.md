@@ -7,6 +7,7 @@
 
 * MP3 decoding (via libhelix-mp3)
 * Wav/wave file decoding
+* Audio mixing (multiple concurrent streams)
 
 ## Who is this for?
 
@@ -48,6 +49,40 @@ For MP3 support you'll need the [esp-libhelix-mp3](https://github.com/chmorgan/e
 ## Tests
 
 Unity tests are implemented in the [test/](../test) folder.
+
+
+## Audio Mixer
+
+The Audio Mixer allows for concurrent playback of multiple audio streams. It supports two types of streams:
+
+* **Decoder Streams**: For playing MP3 or WAV files. Each stream runs its own decoding task.
+* **Raw PCM Streams**: For writing raw PCM data directly to the mixer.
+
+### Basic Mixer Usage
+
+1. Initialize the mixer with output format and I2S write functions.
+2. Create one or more streams using `audio_stream_new()`.
+3. Start playback on the streams.
+
+```c
+audio_mixer_config_t mixer_cfg = {
+    .write_fn = bsp_i2s_write,
+    .clk_set_fn = bsp_i2s_reconfig_clk,
+    .i2s_format = {
+        .sample_rate = 44100,
+        .bits_per_sample = 16,
+        .channels = 2
+    },
+    // ...
+};
+audio_mixer_init(&mixer_cfg);
+
+audio_stream_config_t stream_cfg = DEFAULT_AUDIO_STREAM_CONFIG("bgm");
+audio_stream_handle_t bgm_stream = audio_stream_new(&stream_cfg);
+
+FILE *f = fopen("/sdcard/music.mp3", "rb");
+audio_stream_play(bgm_stream, f);
+```
 
 ## States
 
