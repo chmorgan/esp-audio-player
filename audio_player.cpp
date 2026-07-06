@@ -263,6 +263,12 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp) {
             rewind(fp);
         }
 
+        // Reset decoder: clear bit reservoir state from previous file
+        if (i->mp3_decoder) {
+            MP3FreeDecoder(i->mp3_decoder);
+        }
+        i->mp3_decoder = MP3InitDecoder();
+
         // initialize mp3_instance
         i->mp3_data.bytes_in_data_buf = 0;
         i->mp3_data.read_ptr = i->mp3_data.data_buf;
