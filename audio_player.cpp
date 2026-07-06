@@ -250,6 +250,18 @@ static esp_err_t aplay_file(audio_instance_t *i, FILE *fp) {
     if(is_mp3(fp)) {
         file_type = FILE_TYPE_MP3;
         LOGI_1("file is mp3");
+        
+        // Skip ID3v2 tag body (is_mp3 already rewound, so we read from offset 0)
+        uint8_t head[10];
+        if (fread(head, 1, 10, fp) == 10 && memcmp(head, "ID3", 3) == 0) {
+            uint32_t tag_size = ((uint32_t)head[6] << 21) |
+                                ((uint32_t)head[7] << 14) |
+                                ((uint32_t)head[8] <<  7) |
+                                    (uint32_t)head[9];
+            fseek(fp, tag_size, SEEK_CUR);
+        } else {
+            rewind(fp);
+        }
 
         // initialize mp3_instance
         i->mp3_data.bytes_in_data_buf = 0;
