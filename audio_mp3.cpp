@@ -36,6 +36,18 @@ bool is_mp3(FILE *fp) {
             if (sizeof(mp3_id3_header_v2_t) == fread(&tag, 1, sizeof(mp3_id3_header_v2_t), fp)) {
                 if (memcmp("ID3", (const void *) &tag, sizeof(tag.header)) == 0) {
                     is_mp3_file = true;
+
+                    /* Leave the stream positioned after the ID3v2 tag so decoding
+                     * starts at the first audio frame. Embedded album art inside
+                     * the tag contains byte patterns that look like MP3 sync
+                     * words, which derails the frame search (and can trigger the
+                     * invalid-frame-header path on every false positive). */
+                    uint32_t tag_size = ((tag.size[0] & 0x7F) << 21) |
+                                        ((tag.size[1] & 0x7F) << 14) |
+                                        ((tag.size[2] & 0x7F) << 7) |
+                                        (tag.size[3] & 0x7F);
+                    fseek(fp, sizeof(mp3_id3_header_v2_t) + tag_size, SEEK_SET);
+                    return is_mp3_file;
                 }
             }
         }
@@ -128,20 +140,21 @@ DECODE_STATUS decode_mp3(HMP3Decoder mp3_decoder, FILE *fp, decode_data *pData, 
                 return DECODE_STATUS_NO_DATA_CONTINUE;
             } else {
                 // NOTE: some mp3 files result in misdetection of mp3 frame headers
-                // and during decode these misdetected frames cannot be
-                // decoded
+                // and during decode these misdetected frames cannot be decoded.
                 //
-                // Rather than give up on the file by returning
-                // DECODE_STATUS_ERROR, we ask the caller
-                // to continue to call us, by returning DECODE_STATUS_NO_DATA_CONTINUE.
-                //
-                // The invalid frame data is skipped over as a search for the next frame
-                // on the subsequent call to this function will start searching
-                // AFTER the misdetected frmame header, dropping the invalid data.
-                //
-                // We may want to consider a more sophisticated approach here at a later time.
-                ESP_LOGE(TAG, "status error %d", mp3_dec_err);
-                return DECODE_STATUS_NO_DATA_CONTINUE;
+                // MP3Decode() does not consume input when it rejects a frame, so
+                // read_ptr still points at the misdetected sync word. Without
+                // advancing it, MP3FindSyncWord() keeps returning the same
+                // position and this function livelocks (busy-looping the audio
+                // task and starving lower-priority tasks until the task watchdog
+                // fires). Skip one byte so the next search makes progress.
+                ESP_LOGW(TAG, "invalid frame header %d, skipping 1 byte to find next sync", mp3_dec_err);
+                pInstance->read_ptr += 1;  // Skip 1 byte and try again
+                unread_bytes -= 1;
+                if (unread_bytes <= 0) {
+                    return DECODE_STATUS_NO_DATA_CONTINUE;
+                }
+                return DECODE_STATUS_CONTINUE;  // Try to find next sync
             }
         }
     } else {
@@ -200,6 +213,18 @@ bool is_mp3_io(audio_stream_io_handle_t io) {
             if (sizeof(mp3_id3_header_v2_t) == audio_stream_io_read(io, &tag, sizeof(mp3_id3_header_v2_t))) {
                 if (memcmp("ID3", (const void *) &tag, sizeof(tag.header)) == 0) {
                     is_mp3_file = true;
+
+                    /* Leave the stream positioned after the ID3v2 tag so decoding
+                     * starts at the first audio frame. Embedded album art inside
+                     * the tag contains byte patterns that look like MP3 sync
+                     * words, which derails the frame search (and can trigger the
+                     * invalid-frame-header path on every false positive). */
+                    uint32_t tag_size = ((tag.size[0] & 0x7F) << 21) |
+                                        ((tag.size[1] & 0x7F) << 14) |
+                                        ((tag.size[2] & 0x7F) << 7) |
+                                        (tag.size[3] & 0x7F);
+                    audio_stream_io_seek(io, sizeof(mp3_id3_header_v2_t) + tag_size, AUDIO_STREAM_SEEK_SET);
+                    return is_mp3_file;
                 }
             }
         }
