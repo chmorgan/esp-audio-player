@@ -238,180 +238,8 @@ static esp_err_t mono_to_stereo(uint32_t output_bits_per_sample, decode_data &ad
     return ESP_OK;
 }
 
-static esp_err_t aplay_file(audio_instance_t *i, FILE *fp) {
+static esp_err_t aplay(audio_instance_t *i, audio_stream_io_handle_t io) {
     LOGI_1("start to decode");
-
-    esp_err_t ret = ESP_OK;
-    audio_player_event_t audio_event = { .type = AUDIO_PLAYER_REQUEST_NONE, .fp = NULL };
-
-    FILE_TYPE file_type = FILE_TYPE_UNKNOWN;
-
-#if defined(CONFIG_AUDIO_PLAYER_ENABLE_MP3)
-    if(is_mp3(fp)) {
-        file_type = FILE_TYPE_MP3;
-        LOGI_1("file is mp3");
-
-        // initialize mp3_instance
-        i->mp3_data.bytes_in_data_buf = 0;
-        i->mp3_data.read_ptr = i->mp3_data.data_buf;
-        i->mp3_data.eof_reached = false;
-    }
-#endif
-
-#if defined(CONFIG_AUDIO_PLAYER_ENABLE_WAV)
-    // This can be a pointless condition depending on the build options, no reason to warn about it
-    // cppcheck-suppress knownConditionTrueFalse
-    if(file_type == FILE_TYPE_UNKNOWN)
-    {
-        if(is_wav(fp, &i->wav_data)) {
-            file_type = FILE_TYPE_WAV;
-            LOGI_1("file is wav");
-        }
-    }
-#endif
-
-    // cppcheck-suppress knownConditionTrueFalse
-    if(file_type == FILE_TYPE_UNKNOWN) {
-        ESP_LOGE(TAG, "unknown file type, cleaning up");
-        dispatch_callback(i, AUDIO_PLAYER_CALLBACK_EVENT_UNKNOWN_FILE_TYPE);
-        goto clean_up;
-    }
-
-    do {
-        /* Process audio event sent from other task */
-        if (pdPASS == xQueuePeek(i->event_queue, &audio_event, 0)) {
-            LOGI_2("event in queue");
-            if (AUDIO_PLAYER_REQUEST_PAUSE == audio_event.type) {
-                // receive the pause event to take it off of the queue
-                xQueueReceive(i->event_queue, &audio_event, 0);
-
-                set_state(i, AUDIO_PLAYER_STATE_PAUSE);
-
-                // wait until an event is received that will cause playback to resume,
-                // stop, or change file
-                while(1) {
-                    xQueuePeek(i->event_queue, &audio_event, portMAX_DELAY);
-
-                    if((AUDIO_PLAYER_REQUEST_PLAY != audio_event.type) &&
-                       (AUDIO_PLAYER_REQUEST_STOP != audio_event.type) &&
-                       (AUDIO_PLAYER_REQUEST_RESUME != audio_event.type))
-                    {
-                        // receive to discard the event
-                        xQueueReceive(i->event_queue, &audio_event, 0);
-                    } else {
-                        break;
-                    }
-                }
-
-                if(AUDIO_PLAYER_REQUEST_RESUME == audio_event.type) {
-                    // receive to discard the event
-                    xQueueReceive(i->event_queue, &audio_event, 0);
-                    continue;
-                }
-
-                // else fall out of this condition and let the below logic
-                // handle the other event types
-            }
-
-            if ((AUDIO_PLAYER_REQUEST_STOP == audio_event.type) ||
-                (AUDIO_PLAYER_REQUEST_PLAY == audio_event.type)) {
-                ret = ESP_OK;
-                goto clean_up;
-            } else {
-                // receive to discard the event, this event has no
-                // impact on the state of playback
-                xQueueReceive(i->event_queue, &audio_event, 0);
-                continue;
-            }
-        }
-
-        set_state(i, AUDIO_PLAYER_STATE_PLAYING);
-
-        DECODE_STATUS decode_status = DECODE_STATUS_ERROR;
-
-        switch(file_type) {
-#if defined(CONFIG_AUDIO_PLAYER_ENABLE_MP3)
-            case FILE_TYPE_MP3:
-                decode_status = decode_mp3(i->mp3_decoder, fp, &i->output, &i->mp3_data);
-                break;
-#endif
-#if defined(CONFIG_AUDIO_PLAYER_ENABLE_WAV)
-            case FILE_TYPE_WAV:
-                decode_status = decode_wav(fp, &i->output, &i->wav_data);
-                break;
-#endif
-            case FILE_TYPE_UNKNOWN:
-                ESP_LOGE(TAG, "unexpected unknown file type when decoding");
-                break;
-        }
-
-        // break out and exit if we aren't supposed to continue decoding
-        if(decode_status == DECODE_STATUS_CONTINUE)
-        {
-            // if mono and force_stereo set, convert to stereo as es8311 requires stereo input
-            // even though it is mono output
-            if(i->output.fmt.channels == 1 && i->config.force_stereo) {
-                LOGI_3("c == 1, mono -> stereo");
-                ret = mono_to_stereo(i->output.fmt.bits_per_sample, i->output);
-                if(ret != ESP_OK) {
-                    goto clean_up;
-                }
-            }
-
-            /* Configure I2S clock if the output format changed */
-            if ((i->i2s_format.sample_rate != i->output.fmt.sample_rate) ||
-                    (i->i2s_format.channels != i->output.fmt.channels) ||
-                    (i->i2s_format.bits_per_sample != i->output.fmt.bits_per_sample)) {
-                i->i2s_format = i->output.fmt;
-                LOGI_1("format change: sr=%d, bit=%lu, ch=%lu",
-                        i->i2s_format.sample_rate,
-                        i->i2s_format.bits_per_sample,
-                        i->i2s_format.channels);
-                i2s_slot_mode_t channel_setting = (i->i2s_format.channels == 1) ? I2S_SLOT_MODE_MONO : I2S_SLOT_MODE_STEREO;
-                ret = i->config.clk_set_fn(i->i2s_format.sample_rate,
-                            i->i2s_format.bits_per_sample,
-                            channel_setting);
-                ESP_GOTO_ON_ERROR(ret, clean_up, TAG, "i2s_set_clk");
-            }
-
-            /**
-             * Block until all data has been accepted into the i2s driver, however
-             * the i2s driver has been configured with a buffer to allow for the next round of
-             * audio decoding to occur while the previous set of samples is finishing playback, in order
-             * to ensure playback without interruption.
-             */
-            size_t bytes_written = 0;
-            size_t bytes_to_write = i->output.frame_count * i->output.fmt.channels * (i->i2s_format.bits_per_sample / 8);
-            LOGI_2("c %d, bps %d, bytes %d, frame_count %d",
-                i->output.fmt.channels,
-                i2s_format.bits_per_sample,
-                bytes_to_write,
-                i->output.frame_count);
-
-            // NOTE: to aid transition in api, using write_fn2 based on write_ctx assignment
-            if (i->config.write_ctx)
-                i->config.write_fn2(i->output.samples, bytes_to_write, &bytes_written, pdMS_TO_TICKS(100), i->config.write_ctx);
-            else
-                i->config.write_fn(i->output.samples, bytes_to_write, &bytes_written, pdMS_TO_TICKS(100));
-
-            if(bytes_to_write != bytes_written) {
-                ESP_LOGE(TAG, "to write %d != written %d", bytes_to_write, bytes_written);
-            }
-        } else if(decode_status == DECODE_STATUS_NO_DATA_CONTINUE)
-        {
-            LOGI_2("no data");
-        } else { // DECODE_STATUS_DONE || DECODE_STATUS_ERROR
-            LOGI_1("breaking out of playback");
-            break;
-        }
-    } while (true);
-
-clean_up:
-    return ret;
-}
-
-static esp_err_t aplay_io(audio_instance_t *i, audio_stream_io_handle_t io) {
-    LOGI_1("start to decode from stream io");
 
     esp_err_t ret = ESP_OK;
     audio_player_event_t audio_event = { .type = AUDIO_PLAYER_REQUEST_NONE, .fp = NULL, .io = NULL };
@@ -419,7 +247,7 @@ static esp_err_t aplay_io(audio_instance_t *i, audio_stream_io_handle_t io) {
     FILE_TYPE file_type = FILE_TYPE_UNKNOWN;
 
 #if defined(CONFIG_AUDIO_PLAYER_ENABLE_MP3)
-    if(is_mp3_io(io)) {
+    if(is_mp3(io)) {
         file_type = FILE_TYPE_MP3;
         LOGI_1("file is mp3");
 
@@ -433,7 +261,7 @@ static esp_err_t aplay_io(audio_instance_t *i, audio_stream_io_handle_t io) {
 #if defined(CONFIG_AUDIO_PLAYER_ENABLE_WAV)
     if(file_type == FILE_TYPE_UNKNOWN)
     {
-        if(is_wav_io(io, &i->wav_data)) {
+        if(is_wav(io, &i->wav_data)) {
             file_type = FILE_TYPE_WAV;
             LOGI_1("file is wav");
         }
@@ -491,12 +319,12 @@ static esp_err_t aplay_io(audio_instance_t *i, audio_stream_io_handle_t io) {
         switch(file_type) {
 #if defined(CONFIG_AUDIO_PLAYER_ENABLE_MP3)
             case FILE_TYPE_MP3:
-                decode_status = decode_mp3_io(i->mp3_decoder, io, &i->output, &i->mp3_data);
+                decode_status = decode_mp3(i->mp3_decoder, io, &i->output, &i->mp3_data);
                 break;
 #endif
 #if defined(CONFIG_AUDIO_PLAYER_ENABLE_WAV)
             case FILE_TYPE_WAV:
-                decode_status = decode_wav_io(io, &i->output, &i->wav_data);
+                decode_status = decode_wav(io, &i->output, &i->wav_data);
                 break;
 #endif
             case FILE_TYPE_UNKNOWN:
@@ -607,9 +435,15 @@ static void audio_task(void *pvParam) {
         esp_err_t ret_val;
 
         if (audio_event.io) {
-            ret_val = aplay_io(i, audio_event.io);
+            ret_val = aplay(i, audio_event.io);
         } else {
-            ret_val = aplay_file(i, audio_event.fp);
+            audio_stream_io_handle_t io = audio_stream_io_from_file_no_close(audio_event.fp);
+            if (io) {
+                ret_val = aplay(i, io);
+                audio_stream_io_close(io);
+            } else {
+                ret_val = ESP_ERR_NO_MEM;
+            }
         }
 
         if(ret_val != ESP_OK)

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <stdio.h>
 #include "audio_decode_types.h"
 #include "audio_stream_io.h"
 #include "mp3dec.h"
@@ -45,7 +44,5 @@ typedef struct {
     bool eof_reached;
 } mp3_instance;
 
-bool is_mp3(FILE *fp);
-bool is_mp3_io(audio_stream_io_handle_t io);
-DECODE_STATUS decode_mp3(HMP3Decoder mp3_decoder, FILE *fp, decode_data *pData, mp3_instance *pInstance);
-DECODE_STATUS decode_mp3_io(HMP3Decoder mp3_decoder, audio_stream_io_handle_t io, decode_data *pData, mp3_instance *pInstance);
+bool is_mp3(audio_stream_io_handle_t io);
+DECODE_STATUS decode_mp3(HMP3Decoder mp3_decoder, audio_stream_io_handle_t io, decode_data *pData, mp3_instance *pInstance);
