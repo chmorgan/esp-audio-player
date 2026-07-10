@@ -5,6 +5,13 @@
 
 static const char *TAG = "mp3";
 
+uint32_t mp3_id3v2_tag_size(const mp3_id3_header_v2_t *tag) {
+    return ((tag->size[0] & 0x7F) << 21) |
+           ((tag->size[1] & 0x7F) << 14) |
+           ((tag->size[2] & 0x7F) << 7) |
+           (tag->size[3] & 0x7F);
+}
+
 bool is_mp3(audio_stream_io_handle_t io) {
     bool is_mp3_file = false;
 
@@ -36,6 +43,15 @@ bool is_mp3(audio_stream_io_handle_t io) {
             if (sizeof(mp3_id3_header_v2_t) == audio_stream_io_read(io, &tag, sizeof(mp3_id3_header_v2_t))) {
                 if (memcmp("ID3", (const void *) &tag, sizeof(tag.header)) == 0) {
                     is_mp3_file = true;
+
+                    /* Leave the stream positioned after the ID3v2 tag so decoding
+                     * starts at the first audio frame. Embedded album art inside
+                     * the tag contains byte patterns that look like MP3 sync
+                     * words, which derails the frame search (and can trigger the
+                     * invalid-frame-header path on every false positive). */
+                    uint32_t tag_size = mp3_id3v2_tag_size(&tag);
+                    audio_stream_io_seek(io, sizeof(mp3_id3_header_v2_t) + tag_size, AUDIO_STREAM_SEEK_SET);
+                    return is_mp3_file;
                 }
             }
         }

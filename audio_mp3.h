@@ -22,6 +22,8 @@ typedef struct {
     char size[4];       /*!< TAG size */
 } __attribute__((packed)) mp3_id3_header_v2_t;
 
+uint32_t mp3_id3v2_tag_size(const mp3_id3_header_v2_t *tag);
+
 typedef struct {
     // Constants below
     uint8_t *data_buf;
