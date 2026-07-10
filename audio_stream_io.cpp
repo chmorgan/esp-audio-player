@@ -35,7 +35,23 @@ static size_t file_stream_read(void *ctx, void *buf, size_t size) {
 static int file_stream_seek(void *ctx, long offset, int whence) {
     file_stream_ctx_t *fctx = static_cast<file_stream_ctx_t*>(ctx);
     if (!fctx || !fctx->fp) return -1;
-    return fseek(fctx->fp, offset, whence);
+
+    int file_whence;
+    switch (whence) {
+        case AUDIO_STREAM_SEEK_SET:
+            file_whence = SEEK_SET;
+            break;
+        case AUDIO_STREAM_SEEK_CUR:
+            file_whence = SEEK_CUR;
+            break;
+        case AUDIO_STREAM_SEEK_END:
+            file_whence = SEEK_END;
+            break;
+        default:
+            return -1;
+    }
+
+    return fseek(fctx->fp, offset, file_whence);
 }
 
 static long file_stream_tell(void *ctx) {
@@ -172,7 +188,11 @@ audio_stream_io_handle_t audio_stream_io_from_file(FILE *fp) {
     fctx->fp = fp;
     fctx->should_close = true;
 
-    return audio_stream_io_create(&file_stream_ops, fctx);
+    audio_stream_io_handle_t h = audio_stream_io_create(&file_stream_ops, fctx);
+    if (!h) {
+        free(fctx);
+    }
+    return h;
 }
 
 audio_stream_io_handle_t audio_stream_io_from_file_no_close(FILE *fp) {
@@ -184,7 +204,11 @@ audio_stream_io_handle_t audio_stream_io_from_file_no_close(FILE *fp) {
     fctx->fp = fp;
     fctx->should_close = false;
 
-    return audio_stream_io_create(&file_stream_ops, fctx);
+    audio_stream_io_handle_t h = audio_stream_io_create(&file_stream_ops, fctx);
+    if (!h) {
+        free(fctx);
+    }
+    return h;
 }
 
 audio_stream_io_handle_t audio_stream_io_from_memory(const void *buf, size_t size, bool copy) {
@@ -211,7 +235,11 @@ audio_stream_io_handle_t audio_stream_io_from_memory(const void *buf, size_t siz
     mctx->size = size;
     mctx->pos = 0;
 
-    return audio_stream_io_create(&mem_stream_ops, mctx);
+    audio_stream_io_handle_t h = audio_stream_io_create(&mem_stream_ops, mctx);
+    if (!h) {
+        mem_stream_close(mctx);
+    }
+    return h;
 }
 
 size_t audio_stream_io_read(audio_stream_io_handle_t h, void *buf, size_t size) {
