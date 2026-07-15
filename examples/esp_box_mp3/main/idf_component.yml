@@ -1,0 +1,6 @@
+dependencies:
+  idf: ">=5.0,<6.0"
+  espressif/esp-box: "3.1.0~2"
+  chmorgan/esp-audio-player:
+    version: "*"
+    override_path: "../../.."
