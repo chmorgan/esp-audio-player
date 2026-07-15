@@ -1,0 +1,24 @@
+name: Build ESP-BOX MP3 example
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ESP-IDF 5.4.4
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build example
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --env HOME=/tmp \
+            --volume "$GITHUB_WORKSPACE:/esp-audio-player" \
+            --workdir /esp-audio-player \
+            espressif/idf:v5.4.4 \
+            idf.py -C examples/esp_box_mp3 -D IDF_TARGET=esp32s3 build
