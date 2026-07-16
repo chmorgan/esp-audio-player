@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <string.h>
 #include "audio_log.h"
 #include "audio_mp3.h"
@@ -104,19 +105,25 @@ DECODE_STATUS decode_mp3(HMP3Decoder mp3_decoder, audio_stream_io_handle_t io, d
         return DECODE_STATUS_DONE;
     }
 
+    if (unread_bytes > static_cast<size_t>(INT_MAX)) {
+        ESP_LOGE(TAG, "MP3 input buffer too large: %zu bytes", unread_bytes);
+        return DECODE_STATUS_ERROR;
+    }
+    int bytes_left = static_cast<int>(unread_bytes);
+
     /* Find MP3 sync word from read buffer */
-    int offset = MP3FindSyncWord(pInstance->read_ptr, unread_bytes);
+    int offset = MP3FindSyncWord(pInstance->read_ptr, bytes_left);
 
     LOGI_2("unread %d, total %d, offset 0x%x(%d)",
             (int)unread_bytes, (int)pInstance->bytes_in_data_buf, offset, offset);
 
     if (offset >= 0) {
-        COMPILE_3(int starting_unread_bytes = unread_bytes);
+        COMPILE_3(int starting_unread_bytes = bytes_left);
         uint8_t *read_ptr = pInstance->read_ptr + offset; /*!< Data start point */
         uint8_t *decode_start = read_ptr;
-        unread_bytes -= offset;
-        LOGI_3("read 0x%p, unread %d", read_ptr, (int)unread_bytes);
-        int mp3_dec_err = MP3Decode(mp3_decoder, &read_ptr, (int*)&unread_bytes, reinterpret_cast<int16_t *>(pData->samples), 0);
+        bytes_left -= offset;
+        LOGI_3("read 0x%p, unread %d", read_ptr, bytes_left);
+        int mp3_dec_err = MP3Decode(mp3_decoder, &read_ptr, &bytes_left, reinterpret_cast<int16_t *>(pData->samples), 0);
 
         pInstance->read_ptr = read_ptr;
 
@@ -137,7 +144,7 @@ DECODE_STATUS decode_mp3(HMP3Decoder mp3_decoder, audio_stream_io_handle_t io, d
                 pData->fmt.sample_rate,
                 pData->fmt.bits_per_sample,
                 frame_info.outputSamps,
-                starting_unread_bytes - unread_bytes);
+                starting_unread_bytes - bytes_left);
         } else {
             if (pInstance->eof_reached) {
                 ESP_LOGE(TAG, "status error %d, but EOF", mp3_dec_err);
