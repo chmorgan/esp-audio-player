@@ -17,10 +17,9 @@ bool is_wav(audio_stream_io_handle_t io, wav_instance *pInstance) {
         return false;
     }
 
-    wav_header_t *wav_head = &pInstance->header;
-    if((NULL == strstr(reinterpret_cast<char *>(wav_head->ChunkID), "RIFF")) ||
-        (NULL == strstr(reinterpret_cast<char*>(wav_head->Format), "WAVE"))
-      )
+    const wav_header_t *wav_head = &pInstance->header;
+    if((memcmp(wav_head->ChunkID, "RIFF", sizeof(wav_head->ChunkID)) != 0) ||
+       (memcmp(wav_head->Format, "WAVE", sizeof(wav_head->Format)) != 0))
     {
         return false;
     }

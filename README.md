@@ -66,6 +66,17 @@ To check selected files or directories only, pass them as arguments:
 
 Unity tests are implemented in the [test/](../test) folder.
 
+The host codec tests parse and decode a generated WAV stream and the bundled MP3
+sample without ESP hardware. On Linux or macOS with CMake, Git, and a C/C++
+compiler installed, run:
+
+```sh
+./scripts/run-host-codec-tests.sh
+```
+
+The script downloads the pinned `libhelix-mp3` revision, builds the production
+stream and codec sources, and runs the tests with CTest.
+
 
 ## Audio Mixer
 
