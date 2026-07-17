@@ -7,9 +7,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cppcheck
+
       - name: cppcheck
-        uses: chmorgan/cppcheck-action@v1.4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN}}
-          inline_suppression: enable
-          other_options: --suppress=missingInclude
+        run: ./scripts/run-cppcheck.sh

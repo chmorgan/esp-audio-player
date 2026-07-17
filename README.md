@@ -48,6 +48,20 @@ to add the component dependency to the project's manifest file.
 
 For MP3 support you'll need the [esp-libhelix-mp3](https://github.com/chmorgan/esp-libhelix-mp3) component.
 
+## Static analysis
+
+Install `cppcheck`, then run the full analysis from the repository root:
+
+```sh
+./scripts/run-cppcheck.sh
+```
+
+To check selected files or directories only, pass them as arguments:
+
+```sh
+./scripts/run-cppcheck.sh audio_mp3.cpp
+```
+
 ## Tests
 
 Unity tests are implemented in the [test/](../test) folder.
