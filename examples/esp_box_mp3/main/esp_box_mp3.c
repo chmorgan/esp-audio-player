@@ -85,7 +85,7 @@ static esp_err_t speaker_init(void)
         return ESP_FAIL;
     }
 
-    const esp_codec_dev_sample_info_t initial_format = {
+    esp_codec_dev_sample_info_t initial_format = {
         .sample_rate = INITIAL_SAMPLE_RATE_HZ,
         .channel = 2,
         .bits_per_sample = 16,
