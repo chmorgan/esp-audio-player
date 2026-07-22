@@ -34,4 +34,5 @@ target_link_libraries(audio_decode_host_test PRIVATE helixmp3)
 add_test(
     NAME audio_decode_host_test
     COMMAND audio_decode_host_test
-            "${REPOSITORY_ROOT}/examples/esp_box_mp3/main/sample.mp3")
+            "${REPOSITORY_ROOT}/examples/esp_box_mp3/main/sample.mp3"
+            "${CMAKE_CURRENT_LIST_DIR}/fixtures/wav")

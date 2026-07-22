@@ -1,6 +1,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -133,14 +134,19 @@ std::vector<uint8_t> make_wav(bool include_unknown_chunk) {
     return bytes;
 }
 
-std::vector<uint8_t> read_binary_file(const std::string &path) {
+std::vector<uint8_t> read_binary_file(const std::filesystem::path &path) {
     std::ifstream input(path, std::ios::binary);
     if (!input) {
-        throw std::runtime_error("unable to open MP3 fixture: " + path);
+        throw std::runtime_error("unable to open binary fixture: " + path.string());
     }
 
-    return std::vector<uint8_t>(std::istreambuf_iterator<char>(input),
-                                std::istreambuf_iterator<char>());
+    std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(input),
+                               std::istreambuf_iterator<char>()};
+    if (bytes.empty()) {
+        throw std::runtime_error("binary fixture is empty: " + path.string());
+    }
+
+    return bytes;
 }
 
 bool identifies_as_wav(const std::vector<uint8_t> &bytes) {
@@ -207,6 +213,84 @@ void test_wav_rejects_invalid_headers() {
     cross_field_wave[14] = 'E';
     cross_field_wave[15] = 0;
     REQUIRE(!identifies_as_wav(cross_field_wave));
+}
+
+void test_wav_metadata_decode(const std::filesystem::path &fixture_path) {
+    const std::vector<uint8_t> wav = read_binary_file(fixture_path);
+    Stream stream(audio_stream_io_from_memory(wav.data(), wav.size(), false));
+
+    wav_instance instance{};
+    REQUIRE(is_wav(stream.get(), &instance));
+    REQUIRE(instance.header.AudioFormat == 1);
+    REQUIRE(instance.header.NumChannels == 1);
+    REQUIRE(instance.header.SampleRate == 48000);
+    REQUIRE(instance.header.BitsPerSample == 24);
+
+    long data_position = -1;
+    REQUIRE(audio_stream_io_tell(stream.get(), &data_position) == ESP_OK);
+    REQUIRE(data_position >= 0);
+
+    constexpr size_t kExpectedDataBytes = 1440;
+    constexpr size_t kExpectedFrames = 480;
+    std::array<uint8_t, 2048> output{};
+    decode_data decoded{};
+    decoded.samples = output.data();
+    decoded.samples_capacity = output.size();
+    decoded.samples_capacity_max = output.size();
+
+    REQUIRE(decode_wav(stream.get(), &decoded, &instance) == DECODE_STATUS_CONTINUE);
+    REQUIRE(decoded.fmt.channels == 1);
+    REQUIRE(decoded.fmt.sample_rate == 48000);
+    REQUIRE(decoded.fmt.bits_per_sample == 24);
+    REQUIRE(decoded.frame_count == kExpectedFrames);
+
+    long position_after_data = -1;
+    REQUIRE(audio_stream_io_tell(stream.get(), &position_after_data) == ESP_OK);
+    REQUIRE(position_after_data == data_position + static_cast<long>(kExpectedDataBytes));
+    REQUIRE(static_cast<size_t>(position_after_data) < wav.size());
+
+    REQUIRE(decode_wav(stream.get(), &decoded, &instance) == DECODE_STATUS_DONE);
+    REQUIRE(decoded.frame_count == 0);
+
+    long final_position = -1;
+    REQUIRE(audio_stream_io_tell(stream.get(), &final_position) == ESP_OK);
+    REQUIRE(final_position == position_after_data);
+}
+
+void test_wav_rejects_fixture(const std::filesystem::path &fixture_path) {
+    REQUIRE(!identifies_as_wav(read_binary_file(fixture_path)));
+}
+
+void test_wav_truncated_payload_fails_safely(
+    const std::filesystem::path &fixture_path) {
+    const std::vector<uint8_t> wav = read_binary_file(fixture_path);
+    Stream stream(audio_stream_io_from_memory(wav.data(), wav.size(), false));
+
+    wav_instance instance{};
+    REQUIRE(is_wav(stream.get(), &instance));
+    REQUIRE(instance.header.AudioFormat == 1);
+    REQUIRE(instance.header.NumChannels == 1);
+    REQUIRE(instance.header.SampleRate == 11025);
+    REQUIRE(instance.header.BitsPerSample == 8);
+
+    std::array<uint8_t, 4096> output{};
+    decode_data decoded{};
+    decoded.samples = output.data();
+    decoded.samples_capacity = output.size();
+    decoded.samples_capacity_max = output.size();
+
+    constexpr size_t kDecodeIterationLimit = 32;
+    for (size_t iteration = 0; iteration < kDecodeIterationLimit; ++iteration) {
+        decoded.frame_count = 0;
+        const DECODE_STATUS status = decode_wav(stream.get(), &decoded, &instance);
+        if (status == DECODE_STATUS_ERROR) {
+            return;
+        }
+
+        REQUIRE(status != DECODE_STATUS_DONE);
+    }
+
+    throw std::runtime_error("truncated WAV decoding did not report an error");
 }
 
 void test_mp3_id3_tag_size() {
@@ -320,16 +404,37 @@ void run_test(const char *name, Function function, int &failures) {
 }  // namespace
 
 int main(int argc, char **argv) {
-    if (argc != 2) {
-        std::cerr << "usage: " << argv[0] << " <sample.mp3>\n";
+    if (argc != 3) {
+        std::cerr << "usage: " << argv[0]
+                  << " <sample.mp3> <wav-fixture-directory>\n";
         return 2;
     }
 
     try {
+        const std::filesystem::path wav_fixture_directory(argv[2]);
+        const auto wav_fixture = [&](const char *name) {
+            return wav_fixture_directory / name;
+        };
+
         int failures = 0;
         run_test("canonical WAV decode", [] { test_wav_decode(false); }, failures);
         run_test("WAV unknown chunk", [] { test_wav_decode(true); }, failures);
         run_test("WAV invalid headers", test_wav_rejects_invalid_headers, failures);
+        run_test("WAV metadata is not decoded as audio", [&] {
+            test_wav_metadata_decode(
+                wav_fixture("1khz_sine_48k_mono_region_marker.wav"));
+        }, failures);
+        run_test("WAV oversized data is rejected", [&] {
+            test_wav_rejects_fixture(wav_fixture("bug1301226.wav"));
+        }, failures);
+        run_test("WAV truncated payload reports an error", [&] {
+            test_wav_truncated_payload_fails_safely(
+                wav_fixture("r11025_u8_c1_trunc.wav"));
+        }, failures);
+        run_test("WAV inconsistent header is rejected", [&] {
+            test_wav_rejects_fixture(
+                wav_fixture("test-8000Hz-le-3ch-5S-24bit-inconsistent.wav"));
+        }, failures);
         run_test("MP3 ID3 tag size", test_mp3_id3_tag_size, failures);
         run_test("MP3 identification", test_mp3_identification, failures);
         run_test("MP3 decode", [&] { test_mp3_decode(argv[1]); }, failures);
