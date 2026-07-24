@@ -136,13 +136,13 @@ static int mem_stream_seek(void *ctx, long offset, int whence) {
 }
 
 static long mem_stream_tell(void *ctx) {
-    mem_stream_ctx_t *mctx = static_cast<mem_stream_ctx_t*>(ctx);
+    const mem_stream_ctx_t *mctx = static_cast<mem_stream_ctx_t*>(ctx);
     if (!mctx) return -1;
     return static_cast<long>(mctx->pos);
 }
 
 static int mem_stream_eof(void *ctx) {
-    mem_stream_ctx_t *mctx = static_cast<mem_stream_ctx_t*>(ctx);
+    const mem_stream_ctx_t *mctx = static_cast<mem_stream_ctx_t*>(ctx);
     if (!mctx) return 1;
     return (mctx->pos >= mctx->size) ? 1 : 0;
 }
