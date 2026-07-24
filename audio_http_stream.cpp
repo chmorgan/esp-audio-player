@@ -133,13 +133,13 @@ static int http_stream_seek(void *ctx, long offset, int whence) {
 }
 
 static long http_stream_tell(void *ctx) {
-    audio_http_stream_t *stream = static_cast<audio_http_stream_t*>(ctx);
+    const audio_http_stream_t *stream = static_cast<audio_http_stream_t*>(ctx);
     if (!stream) return -1;
     return static_cast<long>(stream->total_bytes_downloaded - stream->bytes_available);
 }
 
 static int http_stream_eof(void *ctx) {
-    audio_http_stream_t *stream = static_cast<audio_http_stream_t*>(ctx);
+    const audio_http_stream_t *stream = static_cast<audio_http_stream_t*>(ctx);
     if (!stream) return 1;
     return stream->eof_reached && stream->bytes_available == 0;
 }
