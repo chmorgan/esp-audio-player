@@ -35,8 +35,11 @@ exec "$cppcheck_bin" \
     --inconclusive \
     --inline-suppr \
     --std=c++20 \
+    --check-level=exhaustive \
     --suppress=missingInclude \
     --suppress=missingIncludeSystem \
     --suppress=unusedFunction \
     --error-exitcode=1 \
+    -DCONFIG_AUDIO_PLAYER_ENABLE_MP3 \
+    -DCONFIG_AUDIO_PLAYER_ENABLE_WAV \
     "${sources[@]}"
