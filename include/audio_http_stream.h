@@ -105,6 +105,11 @@ audio_http_stream_handle_t audio_http_stream_open(const audio_http_stream_config
  *
  * The I/O interface can be passed to audio_stream_play_from_io()
  *
+ * The returned interface is single-consumer. It supports SEEK_SET and
+ * SEEK_CUR only within the fully cached initial 8 KiB of data that has
+ * already been consumed. Seeking into unread data and SEEK_END are not
+ * supported, and failed seeks leave the position unchanged.
+ *
  * @param h HTTP stream handle
  * @param io_out Output: pointer to receive the stream I/O handle
  * @return ESP_OK on success
