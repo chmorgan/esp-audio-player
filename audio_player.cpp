@@ -54,11 +54,11 @@ typedef enum {
 } audio_player_event_type_t;
 
 typedef struct {
-    audio_player_event_type_t type;
+    audio_player_event_type_t type = AUDIO_PLAYER_REQUEST_NONE;
 
     // valid if type == AUDIO_PLAYER_EVENT_TYPE_PLAY
-    FILE* fp;
-    audio_stream_io_handle_t io;  // valid if fp is NULL
+    FILE* fp = NULL;
+    audio_stream_io_handle_t io = NULL;  // valid if fp is NULL
 } audio_player_event_t;
 
 typedef enum {
