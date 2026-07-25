@@ -14,10 +14,16 @@
 
 static const char *TAG = "audio_stream_io";
 
+/*
+ * audio_stream_io_t is allocated with calloc() in
+ * audio_stream_io_create(), then ops and ctx are assigned before return.
+ */
+// cppcheck-suppress-begin uninitMemberVarNoCtor
 typedef struct audio_stream_io {
     audio_stream_io_ops_t ops;
     void *ctx;
 } audio_stream_io_t;
+// cppcheck-suppress-end uninitMemberVarNoCtor
 
 /* ================= File stream implementation ================= */
 
