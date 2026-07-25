@@ -180,7 +180,7 @@ esp_err_t audio_stream_resume(audio_stream_handle_t h);
  *    - ESP_ERR_NOT_SUPPORTED: Stream is not a raw stream
  *    - Others: Fail
  */
-esp_err_t audio_stream_write_pcm(audio_stream_handle_t h, void *data, size_t size, uint32_t timeout_ms);
+esp_err_t audio_stream_write_pcm(audio_stream_handle_t h, const void *data, size_t size, uint32_t timeout_ms);
 
 /**
  * @brief Send an event to a raw stream's callback
