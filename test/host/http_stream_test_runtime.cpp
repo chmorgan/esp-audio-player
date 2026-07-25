@@ -183,13 +183,19 @@ void vRingbufferReturnItem(RingbufHandle_t ring_buffer, void *item) {
         return;
     }
 
-    for (const auto &candidate : ring_buffer->received_items) {
-        if (candidate->bytes.data() == item) {
-            std::fill(candidate->bytes.begin(), candidate->bytes.end(), UINT8_C(0xA5));
-            candidate->returned = true;
-            return;
-        }
+    const auto returned_item = std::find_if(
+        ring_buffer->received_items.begin(),
+        ring_buffer->received_items.end(),
+        [item](const std::unique_ptr<returned_ring_item> &candidate) {
+            return candidate->bytes.data() == item;
+        });
+    if (returned_item == ring_buffer->received_items.end()) {
+        return;
     }
+
+    returned_ring_item &candidate = **returned_item;
+    std::fill(candidate.bytes.begin(), candidate.bytes.end(), UINT8_C(0xA5));
+    candidate.returned = true;
 }
 
 void vRingbufferGetInfo(RingbufHandle_t ring_buffer,
