@@ -45,5 +45,6 @@ exec "$cppcheck_bin" \
     --error-exitcode=1 \
     -DCONFIG_AUDIO_PLAYER_ENABLE_MP3 \
     -DCONFIG_AUDIO_PLAYER_ENABLE_WAV \
+    -DCONFIG_AUDIO_PLAYER_ENABLE_HTTP_STREAM \
     '-Dasm(x)=' \
     "${sources[@]}"
