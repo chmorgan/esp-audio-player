@@ -530,7 +530,7 @@ static void cleanup_memory(audio_instance_t *i) {
     vQueueDelete(i->event_queue);
 }
 
-esp_err_t audio_instance_new(audio_instance_handle_t *h, audio_player_config_t *config) {
+esp_err_t audio_instance_new(audio_instance_handle_t *h, const audio_player_config_t *config) {
     BaseType_t task_val;
 
     ESP_RETURN_ON_FALSE(h != NULL, ESP_ERR_INVALID_ARG, TAG, "handle pointer is NULL");
