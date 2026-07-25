@@ -56,6 +56,8 @@ public:
         return io_;
     }
 
+    // These methods require the runtime owned by a live HttpStream instance.
+    // cppcheck-suppress-begin functionStatic
     void feed(const std::vector<uint8_t> &bytes) {
         REQUIRE(http_stream_test_runtime::feed_ring_buffer(
             bytes.data(), bytes.size()));
@@ -64,6 +66,7 @@ public:
     void run_producer() {
         http_stream_test_runtime::run_captured_task();
     }
+    // cppcheck-suppress-end functionStatic
 
 private:
     void open() {
@@ -149,6 +152,8 @@ private:
         return 0;
     }
 
+    // audio_stream_io_ops_t defines callbacks with a mutable context pointer.
+    // cppcheck-suppress constParameterCallback
     static long tell(void *ctx) {
         const auto *context = static_cast<const Context *>(ctx);
         return static_cast<long>(context->position);
