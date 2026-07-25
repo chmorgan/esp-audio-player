@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <limits.h>
 #include <string.h>
 #include "audio_log.h"
@@ -30,13 +31,10 @@ static bool mp3_id3v2_header_is_valid(const mp3_id3_header_v2_t *tag) {
         return false;
     }
 
-    for (char size_byte : tag->size) {
-        if ((static_cast<uint8_t>(size_byte) & 0x80U) != 0) {
-            return false;
-        }
-    }
-
-    return true;
+    return std::all_of(
+        tag->size, tag->size + sizeof(tag->size), [](char size_byte) {
+            return (static_cast<uint8_t>(size_byte) & 0x80U) == 0;
+        });
 }
 
 static bool mp3_rewind_after_probe(audio_stream_io_handle_t io, bool matched) {
