@@ -106,7 +106,7 @@ bool audio_mixer_is_initialized();
  *    - ESP_ERR_INVALID_ARG: Invalid configuration
  *    - Others: Fail
  */
-esp_err_t audio_mixer_init(audio_mixer_config_t *cfg);
+esp_err_t audio_mixer_init(const audio_mixer_config_t *cfg);
 
 /**
  * @brief Deinitialize the mixer and stop the mixer task
