@@ -452,7 +452,7 @@ esp_err_t audio_stream_write_pcm(audio_stream_handle_t h, void *data, size_t siz
     return ESP_OK;
 }
 
-audio_stream_handle_t audio_stream_new(audio_stream_config_t *cfg) {
+audio_stream_handle_t audio_stream_new(const audio_stream_config_t *cfg) {
     ESP_RETURN_ON_FALSE(cfg, NULL, TAG, "null config");
 
     audio_stream_t *stream = static_cast<audio_stream_t *>(calloc(1, sizeof(audio_stream_t)));
