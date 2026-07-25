@@ -571,7 +571,7 @@ esp_err_t audio_http_stream_close(audio_http_stream_handle_t h) {
     }
 
     if (h->cfg.url) {
-        free((void*)h->cfg.url);
+        free(const_cast<char *>(h->cfg.url));
         h->cfg.url = NULL;
     }
 
