@@ -197,7 +197,7 @@ TEST_CASE("audio player states and callbacks are correct", "[audio player]")
     //
     // Suppression as these are linker symbols and cppcheck doesn't know how to ensure
     // they are the same object
-    // cppcheck-suppress comparePointers
+    // cppcheck-suppress subtractPointers
     size_t mp3_size = (mp3_end - mp3_start) - 1;
     ESP_LOGI(TAG, "mp3_size %zu bytes", mp3_size);
 

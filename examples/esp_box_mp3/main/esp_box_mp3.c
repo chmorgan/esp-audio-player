@@ -120,6 +120,8 @@ void app_main(void)
     ESP_ERROR_CHECK(audio_player_new(player_config));
     ESP_ERROR_CHECK(audio_player_callback_register(player_event_callback, NULL));
 
+    // Linker-generated symbols delimit the same embedded binary object.
+    // cppcheck-suppress subtractPointers
     const size_t sample_size = (size_t)(sample_mp3_end - sample_mp3_start);
     ESP_LOGI(TAG, "looping embedded MP3 (%zu bytes)", sample_size);
 
