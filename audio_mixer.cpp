@@ -108,7 +108,7 @@ static void mixer_task(void *arg) {
     vTaskDelete(NULL);
 }
 
-IRAM_ATTR static esp_err_t mixer_stream_write(void *data, size_t size, size_t *bytes_written, uint32_t timeout, void *stream) {
+IRAM_ATTR static esp_err_t mixer_stream_write(const void *data, size_t size, size_t *bytes_written, uint32_t timeout, void *stream) {
     audio_stream_t *s = static_cast<audio_stream_t *>(stream);
     if (!s || !s->pcm_rb) {
         if (bytes_written) *bytes_written = 0;
