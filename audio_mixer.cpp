@@ -212,7 +212,7 @@ void audio_mixer_callback_register(audio_mixer_cb_t cb) {
     s_mixer_user_cb = cb;
 }
 
-esp_err_t audio_mixer_init(audio_mixer_config_t *cfg) {
+esp_err_t audio_mixer_init(const audio_mixer_config_t *cfg) {
     if (s_running) return ESP_OK;
     ESP_RETURN_ON_FALSE(cfg && cfg->write_fn && cfg->clk_set_fn, ESP_ERR_INVALID_ARG, TAG, "invalid mixer config");
     s_cfg = *cfg;
