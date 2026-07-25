@@ -208,14 +208,18 @@ static int test_stream_seek(void *ctx, long offset, int whence) {
     return 0;
 }
 
+// audio_stream_io_ops_t defines callbacks with a mutable context pointer.
+// cppcheck-suppress constParameterCallback
 static long test_stream_tell(void *ctx) {
-    test_stream_ctx_t *tctx = (test_stream_ctx_t*)ctx;
+    const test_stream_ctx_t *tctx = ctx;
     if (!tctx) return -1;
     return (long)tctx->pos;
 }
 
+// audio_stream_io_ops_t defines callbacks with a mutable context pointer.
+// cppcheck-suppress constParameterCallback
 static int test_stream_eof(void *ctx) {
-    test_stream_ctx_t *tctx = (test_stream_ctx_t*)ctx;
+    const test_stream_ctx_t *tctx = ctx;
     if (!tctx) return 1;
     return (tctx->pos >= tctx->size) ? 1 : 0;
 }
