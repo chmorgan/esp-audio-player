@@ -33,13 +33,46 @@ static bool read_exact(audio_stream_io_handle_t io, void *buffer, size_t size) {
     return true;
 }
 
+static bool discard_exact(audio_stream_io_handle_t io, uint64_t byte_count) {
+    uint8_t discard_buffer[256];
+
+    while(byte_count != 0) {
+        size_t bytes_to_read =
+            byte_count < sizeof(discard_buffer)
+                ? static_cast<size_t>(byte_count)
+                : sizeof(discard_buffer);
+        if(!read_exact(io, discard_buffer, bytes_to_read)) {
+            return false;
+        }
+        byte_count -= bytes_to_read;
+    }
+
+    return true;
+}
+
 static bool skip_bytes(audio_stream_io_handle_t io, uint64_t byte_count) {
     while(byte_count != 0) {
         long offset = byte_count > static_cast<uint64_t>(LONG_MAX)
                           ? LONG_MAX
                           : static_cast<long>(byte_count);
-        if(audio_stream_io_seek(io, offset, AUDIO_STREAM_SEEK_CUR) != ESP_OK) {
-            return false;
+        long position_before;
+        esp_err_t tell_result = audio_stream_io_tell(io, &position_before);
+        esp_err_t seek_result =
+            audio_stream_io_seek(io, offset, AUDIO_STREAM_SEEK_CUR);
+
+        if(seek_result != ESP_OK) {
+            bool seek_did_not_move = (seek_result == ESP_ERR_NOT_SUPPORTED);
+            if(!seek_did_not_move && (tell_result == ESP_OK)) {
+                long position_after;
+                seek_did_not_move =
+                    (audio_stream_io_tell(io, &position_after) == ESP_OK) &&
+                    (position_after == position_before);
+            }
+
+            if(!seek_did_not_move ||
+               !discard_exact(io, static_cast<uint64_t>(offset))) {
+                return false;
+            }
         }
         byte_count -= static_cast<uint64_t>(offset);
     }
