@@ -73,7 +73,7 @@ static void mixer_task(void *arg) {
             void *item = xRingbufferReceiveUpTo(stream->pcm_rb, &received_bytes, pdMS_TO_TICKS(5), bytes);
 
             if (item && received_bytes > 0) {
-                int16_t *samples = static_cast<int16_t *>(item);
+                const int16_t *samples = static_cast<int16_t *>(item);
                 size_t count = received_bytes / sizeof(int16_t);
 
                 for (size_t k = 0; k < count; ++k) {
