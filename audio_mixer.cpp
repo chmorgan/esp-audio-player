@@ -440,7 +440,7 @@ esp_err_t audio_stream_resume(audio_stream_handle_t h) {
     return audio_instance_resume(s->instance);
 }
 
-esp_err_t audio_stream_write_pcm(audio_stream_handle_t h, void *data, size_t size, uint32_t timeout_ms) {
+esp_err_t audio_stream_write_pcm(audio_stream_handle_t h, const void *data, size_t size, uint32_t timeout_ms) {
     audio_stream_t *s = h;
     CHECK_STREAM(s);
 
