@@ -5,6 +5,8 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
+#include <stdint.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -44,68 +46,114 @@ typedef struct audio_http_stream {
     bool id3_tag_skipped;
 
     size_t total_bytes_downloaded;
-    size_t bytes_available;
     int content_length;  // Total content length from HTTP headers, -1 if unknown
 
     audio_stream_io_handle_t io_handle;
 
-    // Seek support: keep initial bytes to allow rewinding
+    // Logical read position and the source position at the head of the ring.
+    // A cursor behind the frontier is replaying the cached source prefix.
+    size_t cursor;
+    size_t frontier;
+
+    // Seek support: keep an exact source prefix to allow bounded rewinding.
     uint8_t *initial_buf;
     size_t initial_buf_size;
-    size_t initial_buf_read_pos;
     size_t initial_buf_filled;
 } audio_http_stream_t;
 // cppcheck-suppress-end uninitMemberVarNoCtor
 
 /* ================= Stream I/O callbacks for HTTP stream ================= */
 
+static size_t http_stream_buffered_bytes(const audio_http_stream_t *stream) {
+    if (!stream || !stream->ringbuf) return 0;
+
+    UBaseType_t items_waiting = 0;
+    vRingbufferGetInfo(stream->ringbuf, NULL, NULL, NULL, NULL, &items_waiting);
+    return static_cast<size_t>(items_waiting);
+}
+
+static void http_stream_get_terminal_state(audio_http_stream_t *stream,
+                                           bool *eof_reached,
+                                           bool *error_occurred) {
+    if (stream->mutex) xSemaphoreTake(stream->mutex, portMAX_DELAY);
+    *eof_reached = stream->eof_reached;
+    *error_occurred = stream->error_occurred;
+    if (stream->mutex) xSemaphoreGive(stream->mutex);
+}
+
+static void http_stream_set_eof(audio_http_stream_t *stream, bool reached) {
+    if (stream->mutex) xSemaphoreTake(stream->mutex, portMAX_DELAY);
+    stream->eof_reached = reached;
+    if (stream->mutex) xSemaphoreGive(stream->mutex);
+}
+
+static void http_stream_set_error(audio_http_stream_t *stream, bool occurred) {
+    if (stream->mutex) xSemaphoreTake(stream->mutex, portMAX_DELAY);
+    stream->error_occurred = occurred;
+    if (stream->mutex) xSemaphoreGive(stream->mutex);
+}
+
 static size_t http_stream_read(void *ctx, void *buf, size_t size) {
     audio_http_stream_t *stream = static_cast<audio_http_stream_t*>(ctx);
-    if (!stream || !stream->ringbuf) return 0;
+    if (!stream || !stream->ringbuf || (!buf && size != 0)) return 0;
 
     size_t total_read = 0;
     uint8_t *dst = static_cast<uint8_t*>(buf);
 
-    // Note: ID3v2 tag skipping disabled - files with ID3 tags may not play correctly
-
-    // First, read from initial buffer if there's any data (for seek support)
-    while (total_read < size && stream->initial_buf_read_pos < stream->initial_buf_filled) {
-        size_t to_copy = size - total_read;
-        size_t from_buf = stream->initial_buf_filled - stream->initial_buf_read_pos;
-        if (to_copy > from_buf) {
-            to_copy = from_buf;
+    // Replay only bytes explicitly sought behind the source frontier. Normal
+    // sequential reads keep cursor == frontier and therefore never replay.
+    while (total_read < size && stream->cursor < stream->frontier) {
+        if (!stream->initial_buf || stream->cursor >= stream->initial_buf_filled) {
+            ESP_LOGE(TAG, "HTTP replay cursor is outside the cached prefix");
+            return total_read;
         }
-        memcpy(dst + total_read, stream->initial_buf + stream->initial_buf_read_pos, to_copy);
+
+        size_t replay_end = stream->frontier;
+        if (replay_end > stream->initial_buf_filled) {
+            replay_end = stream->initial_buf_filled;
+        }
+
+        size_t to_copy = replay_end - stream->cursor;
+        if (to_copy > size - total_read) {
+            to_copy = size - total_read;
+        }
+        memcpy(dst + total_read, stream->initial_buf + stream->cursor, to_copy);
         total_read += to_copy;
-        stream->initial_buf_read_pos += to_copy;
+        stream->cursor += to_copy;
     }
 
-    // If initial buffer is exhausted or not used, read from ring buffer
-    // Retry a few times if ringbuffer is temporarily empty to avoid premature EOF
+    // Once replay catches the frontier, continue with bytes from the ring.
+    // Retry a few times if the producer is still active and temporarily empty.
     int retry_count = 0;
     const int max_retries = 10;
 
     while (total_read < size && retry_count < max_retries) {
-        // If EOF or error, don't wait for more data
-        if (stream->eof_reached || stream->error_occurred) {
-            break;
-        }
+        bool eof_reached = false;
+        bool error_occurred = false;
+        http_stream_get_terminal_state(stream, &eof_reached, &error_occurred);
+        const bool producer_terminal = eof_reached || error_occurred;
 
         size_t item_size = 0;
         void *item = xRingbufferReceiveUpTo(stream->ringbuf, &item_size,
-                                              pdMS_TO_TICKS(200),
+                                              producer_terminal ? 0 : pdMS_TO_TICKS(200),
                                               size - total_read);
 
         if (item && item_size > 0) {
+            if (item_size > SIZE_MAX - stream->frontier) {
+                ESP_LOGE(TAG, "HTTP stream position overflow");
+                vRingbufferReturnItem(stream->ringbuf, item);
+                break;
+            }
+
             memcpy(dst + total_read, item, item_size);
 
-            total_read += item_size;
-            vRingbufferReturnItem(stream->ringbuf, item);
-
-            // Keep a copy of initial bytes for seek support
-            if (stream->initial_buf && stream->initial_buf_filled < stream->initial_buf_size) {
+            // Keep an exact copy of the source prefix. The ring item must be
+            // copied before it is returned to FreeRTOS.
+            if (stream->initial_buf &&
+                stream->initial_buf_filled == stream->frontier &&
+                stream->initial_buf_filled < stream->initial_buf_size) {
                 size_t to_save = item_size;
-                if (stream->initial_buf_filled + to_save > stream->initial_buf_size) {
+                if (to_save > stream->initial_buf_size - stream->initial_buf_filled) {
                     to_save = stream->initial_buf_size - stream->initial_buf_filled;
                 }
                 if (to_save > 0) {
@@ -113,9 +161,16 @@ static size_t http_stream_read(void *ctx, void *buf, size_t size) {
                     stream->initial_buf_filled += to_save;
                 }
             }
+
+            total_read += item_size;
+            stream->frontier += item_size;
+            stream->cursor = stream->frontier;
+            vRingbufferReturnItem(stream->ringbuf, item);
             retry_count = 0;  // Reset retry count on successful read
         } else if (item) {
             vRingbufferReturnItem(stream->ringbuf, item);
+        } else if (producer_terminal) {
+            break;
         } else {
             // Ringbuffer empty - increment retry count and yield to allow download task to fill buffer
             retry_count++;
@@ -134,21 +189,81 @@ static size_t http_stream_read(void *ctx, void *buf, size_t size) {
 }
 
 static int http_stream_seek(void *ctx, long offset, int whence) {
-    // Seek not supported for HTTP stream
-    // Just return error to indicate seek is not possible
-    return -1;
+    audio_http_stream_t *stream = static_cast<audio_http_stream_t*>(ctx);
+    if (!stream) return -1;
+
+    size_t target = 0;
+    switch (whence) {
+        case AUDIO_STREAM_SEEK_SET:
+            if (offset < 0 ||
+                static_cast<uintmax_t>(offset) > static_cast<uintmax_t>(SIZE_MAX)) {
+                return -1;
+            }
+            target = static_cast<size_t>(offset);
+            break;
+
+        case AUDIO_STREAM_SEEK_CUR:
+            if (offset < 0) {
+                // Avoid negating LONG_MIN.
+                const uintmax_t magnitude =
+                    static_cast<uintmax_t>(-(offset + 1)) + UINTMAX_C(1);
+                if (magnitude > static_cast<uintmax_t>(stream->cursor)) {
+                    return -1;
+                }
+                target = stream->cursor - static_cast<size_t>(magnitude);
+            } else {
+                const uintmax_t increment = static_cast<uintmax_t>(offset);
+                if (increment >
+                    static_cast<uintmax_t>(SIZE_MAX - stream->cursor)) {
+                    return -1;
+                }
+                target = stream->cursor + static_cast<size_t>(increment);
+            }
+            break;
+
+        case AUDIO_STREAM_SEEK_END:
+        default:
+            return -1;
+    }
+
+    // A no-op remains valid even after the replay window has been exceeded.
+    if (target == stream->cursor) {
+        return 0;
+    }
+
+    // HTTP seek is limited to the fully cached consumed prefix. It never
+    // blocks to consume unread network data, and failed seeks do not move.
+    if (!stream->initial_buf ||
+        stream->frontier > stream->initial_buf_filled ||
+        target > stream->frontier) {
+        return -1;
+    }
+
+    stream->cursor = target;
+    return 0;
 }
 
 static long http_stream_tell(void *ctx) {
     const audio_http_stream_t *stream = static_cast<audio_http_stream_t*>(ctx);
-    if (!stream) return -1;
-    return static_cast<long>(stream->total_bytes_downloaded - stream->bytes_available);
+    if (!stream ||
+        static_cast<uintmax_t>(stream->cursor) >
+            static_cast<uintmax_t>(LONG_MAX)) {
+        return -1;
+    }
+    return static_cast<long>(stream->cursor);
 }
 
 static int http_stream_eof(void *ctx) {
-    const audio_http_stream_t *stream = static_cast<audio_http_stream_t*>(ctx);
+    audio_http_stream_t *stream = static_cast<audio_http_stream_t*>(ctx);
     if (!stream) return 1;
-    return stream->eof_reached && stream->bytes_available == 0;
+
+    bool eof_reached = false;
+    bool error_occurred = false;
+    http_stream_get_terminal_state(stream, &eof_reached, &error_occurred);
+    const bool replay_available = stream->cursor < stream->frontier;
+    return (eof_reached || error_occurred) &&
+           !replay_available &&
+           http_stream_buffered_bytes(stream) == 0;
 }
 
 static void http_stream_close(void *ctx) {
@@ -241,7 +356,7 @@ static void http_download_task(void *arg) {
             if (!client) {
                 ESP_LOGE(TAG, "Failed to initialize HTTP client for URL: %s", stream->cfg.url);
                 stream->state = AUDIO_HTTP_STREAM_STATE_ERROR;
-                stream->error_occurred = true;
+                http_stream_set_error(stream, true);
                 dispatch_event(stream, AUDIO_HTTP_STREAM_EVENT_ERROR);
 
                 if (stream->cfg.enable_auto_reconnect) {
@@ -301,21 +416,19 @@ static void http_download_task(void *arg) {
 
             stream->total_bytes_downloaded += read_len;
 
-            UBaseType_t items_waiting = 0;
-            vRingbufferGetInfo(stream->ringbuf, NULL, NULL, NULL, NULL, &items_waiting);
-            stream->bytes_available = items_waiting;
+            const size_t bytes_available = http_stream_buffered_bytes(stream);
 
             LOGI_2(TAG, "HTTP download: read=%d, total=%d, buffered=%d",
-                    read_len, (int)stream->total_bytes_downloaded, (int)stream->bytes_available);
+                    read_len, (int)stream->total_bytes_downloaded, (int)bytes_available);
 
             if (stream->state == AUDIO_HTTP_STREAM_STATE_BUFFERING &&
-                stream->bytes_available >= stream->cfg.high_watermark) {
+                bytes_available >= stream->cfg.high_watermark) {
                 stream->state = AUDIO_HTTP_STREAM_STATE_PLAYING;
                 dispatch_event(stream, AUDIO_HTTP_STREAM_EVENT_BUFFER_READY);
             }
         } else if (read_len == 0) {
             ESP_LOGI(TAG, "End of HTTP stream");
-            stream->eof_reached = true;
+            http_stream_set_eof(stream, true);
             stream->state = AUDIO_HTTP_STREAM_STATE_FINISHED;
             dispatch_event(stream, AUDIO_HTTP_STREAM_EVENT_FINISHED);
             break;
@@ -324,12 +437,12 @@ static void http_download_task(void *arg) {
             esp_http_client_cleanup(client);
             client = NULL;
             stream->state = AUDIO_HTTP_STREAM_STATE_ERROR;
-            stream->error_occurred = true;
+            http_stream_set_error(stream, true);
             dispatch_event(stream, AUDIO_HTTP_STREAM_EVENT_ERROR);
 
             if (stream->cfg.enable_auto_reconnect) {
                 vTaskDelay(pdMS_TO_TICKS(stream->cfg.reconnect_timeout_ms));
-                stream->error_occurred = false;
+                http_stream_set_error(stream, false);
                 continue;
             }
             break;
@@ -338,7 +451,7 @@ static void http_download_task(void *arg) {
         free(buf);
 
         if (stream->state == AUDIO_HTTP_STREAM_STATE_PLAYING &&
-            stream->bytes_available < stream->cfg.low_watermark) {
+            http_stream_buffered_bytes(stream) < stream->cfg.low_watermark) {
             stream->state = AUDIO_HTTP_STREAM_STATE_BUFFERING;
             dispatch_event(stream, AUDIO_HTTP_STREAM_EVENT_BUFFERING);
         }
@@ -359,7 +472,7 @@ static void http_download_task(void *arg) {
     audio_http_stream_t *stream = static_cast<audio_http_stream_t*>(arg);
     ESP_LOGE(TAG, "HTTP streaming not enabled. Set CONFIG_AUDIO_PLAYER_ENABLE_HTTP_STREAM=y");
     stream->state = AUDIO_HTTP_STREAM_STATE_ERROR;
-    stream->error_occurred = true;
+    http_stream_set_error(stream, true);
     dispatch_event(stream, AUDIO_HTTP_STREAM_EVENT_ERROR);
     stream->task = NULL;
     vTaskDelete(NULL);
@@ -445,7 +558,6 @@ audio_http_stream_handle_t audio_http_stream_open(const audio_http_stream_config
         ESP_LOGW(TAG, "Failed to allocate initial buffer, seek will not be supported");
         stream->initial_buf_size = 0;
     }
-    stream->initial_buf_read_pos = 0;
     stream->initial_buf_filled = 0;
 
     BaseType_t res = xTaskCreatePinnedToCore(
@@ -498,13 +610,7 @@ audio_http_stream_state_t audio_http_stream_get_state(audio_http_stream_handle_t
 }
 
 size_t audio_http_stream_get_buffered_bytes(audio_http_stream_handle_t h) {
-    if (!h) return 0;
-
-    UBaseType_t items_waiting = 0;
-    if (h->ringbuf) {
-        vRingbufferGetInfo(h->ringbuf, NULL, NULL, NULL, NULL, &items_waiting);
-    }
-    return items_waiting;
+    return http_stream_buffered_bytes(h);
 }
 
 size_t audio_http_stream_get_total_bytes(audio_http_stream_handle_t h) {
