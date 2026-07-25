@@ -104,7 +104,7 @@ typedef struct audio_instance {
 static audio_instance_t *g_instance = NULL;  // when non-null, in legacy non-mixer mode
 
 audio_player_state_t audio_instance_get_state(audio_instance_handle_t h) {
-    audio_instance_t *i = static_cast<audio_instance_t *>(h);
+    const audio_instance_t *i = static_cast<audio_instance_t *>(h);
     return i ? i->state : AUDIO_PLAYER_STATE_IDLE;
 }
 
@@ -216,7 +216,7 @@ static esp_err_t mono_to_stereo(uint32_t output_bits_per_sample, decode_data &ad
     //       but if we do (ptr + X) we end up at the sample at index X instead
     //       which is one further
     int16_t *out = reinterpret_cast<int16_t*>(adata.samples) + (new_sample_count - 1);
-    int16_t *in = reinterpret_cast<int16_t*>(adata.samples) + (adata.frame_count - 1);
+    const int16_t *in = reinterpret_cast<int16_t*>(adata.samples) + (adata.frame_count - 1);
     size_t samples = adata.frame_count;
     while(samples) {
         // write right channel
