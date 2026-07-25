@@ -28,6 +28,11 @@ static audio_mixer_config_t s_cfg = {};
 static volatile bool s_running = false;
 static audio_mixer_cb_t s_mixer_user_cb = NULL;
 
+/*
+ * audio_stream_t is allocated with calloc() in audio_stream_new(),
+ * so all members are zero-initialized before use.
+ */
+// cppcheck-suppress-begin uninitMemberVarNoCtor
 typedef struct audio_stream {
     audio_stream_type_t type;
     char name[16];
@@ -38,6 +43,7 @@ typedef struct audio_stream {
 
     SLIST_ENTRY(audio_stream) next;
 } audio_stream_t;
+// cppcheck-suppress-end uninitMemberVarNoCtor
 
 SLIST_HEAD(audio_stream_list, audio_stream);
 static audio_stream_list s_stream_list = SLIST_HEAD_INITIALIZER(s_stream_list);
@@ -67,6 +73,8 @@ static void mixer_task(void *arg) {
 
         audio_stream_t *stream;
         SLIST_FOREACH(stream, &s_stream_list, next) {
+            // audio_stream_new() inserts streams only after pcm_rb is initialized.
+            // cppcheck-suppress uninitvar
             if (!stream->pcm_rb) continue;
 
             size_t received_bytes = 0;
