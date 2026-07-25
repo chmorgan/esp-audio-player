@@ -1,12 +1,17 @@
 #include <array>
+#include <cerrno>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fcntl.h>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 #include "audio_mp3.h"
@@ -71,6 +76,22 @@ public:
 private:
     HMP3Decoder handle_;
 };
+
+using File = std::unique_ptr<FILE, decltype(&fclose)>;
+
+audio_stream_io_handle_t open_file_stream(const std::filesystem::path &path) {
+    FILE *file = fopen(path.string().c_str(), "rb");
+    if (!file) {
+        throw std::runtime_error("unable to open file stream: " + path.string());
+    }
+
+    audio_stream_io_handle_t stream = audio_stream_io_from_file(file);
+    if (!stream) {
+        fclose(file);
+        throw std::runtime_error("unable to create file stream: " + path.string());
+    }
+    return stream;
+}
 
 void append_fourcc(std::vector<uint8_t> &bytes, const char value[5]) {
     bytes.insert(bytes.end(), value, value + 4);
@@ -147,6 +168,91 @@ std::vector<uint8_t> read_binary_file(const std::filesystem::path &path) {
     }
 
     return bytes;
+}
+
+void test_file_stream_contract() {
+    constexpr std::array<uint8_t, 10> data = {
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    File file(tmpfile(), &fclose);
+    REQUIRE(file != nullptr);
+    REQUIRE(fwrite(data.data(), 1, data.size(), file.get()) == data.size());
+    rewind(file.get());
+
+    {
+        Stream stream(audio_stream_io_from_file_no_close(file.get()));
+        long position = -1;
+        REQUIRE(audio_stream_io_tell(stream.get(), &position) == ESP_OK);
+        REQUIRE(position == 0);
+
+        std::array<uint8_t, 3> bytes{};
+        REQUIRE(audio_stream_io_read(stream.get(), bytes.data(), bytes.size()) ==
+                bytes.size());
+        REQUIRE((bytes == std::array<uint8_t, 3>{0, 1, 2}));
+        REQUIRE(audio_stream_io_tell(stream.get(), &position) == ESP_OK);
+        REQUIRE(position == 3);
+
+        REQUIRE(audio_stream_io_seek(stream.get(), 5, AUDIO_STREAM_SEEK_SET) ==
+                ESP_OK);
+        REQUIRE(audio_stream_io_tell(stream.get(), &position) == ESP_OK);
+        REQUIRE(position == 5);
+
+        REQUIRE(audio_stream_io_seek(stream.get(), -2, AUDIO_STREAM_SEEK_CUR) ==
+                ESP_OK);
+        REQUIRE(audio_stream_io_tell(stream.get(), &position) == ESP_OK);
+        REQUIRE(position == 3);
+
+        REQUIRE(audio_stream_io_seek(stream.get(), -1, AUDIO_STREAM_SEEK_END) ==
+                ESP_OK);
+        REQUIRE(audio_stream_io_tell(stream.get(), &position) == ESP_OK);
+        REQUIRE(position == 9);
+
+        uint8_t last_byte = 0;
+        REQUIRE(audio_stream_io_read(stream.get(), &last_byte, 1) == 1);
+        REQUIRE(last_byte == 9);
+        REQUIRE(!audio_stream_io_eof(stream.get()));
+        REQUIRE(audio_stream_io_read(stream.get(), &last_byte, 1) == 0);
+        REQUIRE(audio_stream_io_eof(stream.get()));
+    }
+
+    rewind(file.get());
+    std::array<uint8_t, data.size()> reread{};
+    REQUIRE(fread(reread.data(), 1, reread.size(), file.get()) == reread.size());
+    REQUIRE(reread == data);
+}
+
+void test_owned_file_stream_closes_file() {
+    File file(tmpfile(), &fclose);
+    REQUIRE(file != nullptr);
+    const int descriptor = fileno(file.get());
+    REQUIRE(descriptor >= 0);
+
+    audio_stream_io_handle_t handle = audio_stream_io_from_file(file.get());
+    REQUIRE(handle != nullptr);
+    file.release();
+    audio_stream_io_close(handle);
+
+    errno = 0;
+    REQUIRE(fcntl(descriptor, F_GETFD) == -1);
+    REQUIRE(errno == EBADF);
+}
+
+void test_file_stream_codec_identification(
+    const std::filesystem::path &mp3_path,
+    const std::filesystem::path &wav_path) {
+    {
+        Stream stream(open_file_stream(mp3_path));
+        REQUIRE(is_mp3(stream.get()));
+    }
+
+    {
+        Stream stream(open_file_stream(wav_path));
+        wav_instance instance{};
+        REQUIRE(is_wav(stream.get(), &instance));
+        REQUIRE(instance.header.AudioFormat == 1);
+        REQUIRE(instance.header.NumChannels == 1);
+        REQUIRE(instance.header.SampleRate == 48000);
+        REQUIRE(instance.header.BitsPerSample == 24);
+    }
 }
 
 bool identifies_as_wav(const std::vector<uint8_t> &bytes) {
@@ -417,6 +523,15 @@ int main(int argc, char **argv) {
         };
 
         int failures = 0;
+        run_test("FILE stream read, seek, tell, and EOF",
+                 test_file_stream_contract, failures);
+        run_test("owned FILE stream closes its file",
+                 test_owned_file_stream_closes_file, failures);
+        run_test("FILE streams identify real MP3 and WAV fixtures", [&] {
+            test_file_stream_codec_identification(
+                argv[1],
+                wav_fixture("1khz_sine_48k_mono_region_marker.wav"));
+        }, failures);
         run_test("canonical WAV decode", [] { test_wav_decode(false); }, failures);
         run_test("WAV unknown chunk", [] { test_wav_decode(true); }, failures);
         run_test("WAV invalid headers", test_wav_rejects_invalid_headers, failures);
