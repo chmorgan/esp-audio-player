@@ -578,13 +578,13 @@ esp_err_t audio_instance_new(audio_instance_handle_t *h, const audio_player_conf
 
     i->running = true;
     task_val = xTaskCreatePinnedToCore(
-        (TaskFunction_t)        audio_task,
-                                "Audio Task",
-                                4 * 1024,
-                                i,
-        (UBaseType_t)           i->config.priority,
-        (TaskHandle_t *)  NULL,
-        (BaseType_t)            i->config.coreID);
+        audio_task,
+        "Audio Task",
+        4 * 1024,
+        i,
+        i->config.priority,
+        nullptr,
+        i->config.coreID);
 
     ESP_GOTO_ON_FALSE(pdPASS == task_val, ESP_ERR_NO_MEM, cleanup,
         TAG, "Failed create audio task");
