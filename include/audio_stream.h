@@ -201,7 +201,7 @@ esp_err_t audio_stream_raw_send_event(audio_stream_handle_t h, audio_player_call
  * @param cfg Pointer to the stream configuration structure
  * @return Handle to the new stream, or NULL if failed
  */
-audio_stream_handle_t audio_stream_new(audio_stream_config_t *cfg);
+audio_stream_handle_t audio_stream_new(const audio_stream_config_t *cfg);
 
 /**
  * @brief Delete an audio stream and free its resources
