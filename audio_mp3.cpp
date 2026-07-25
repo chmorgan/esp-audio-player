@@ -13,56 +13,130 @@ uint32_t mp3_id3v2_tag_size(const mp3_id3_header_v2_t *tag) {
            (tag->size[3] & 0x7F);
 }
 
-bool is_mp3(audio_stream_io_handle_t io) {
-    bool is_mp3_file = false;
+static bool mp3_frame_signature_matches(const uint8_t magic[3]) {
+    return (magic[0] == 0xFF) &&
+           ((magic[1] == 0xFB) ||
+            (magic[1] == 0xF3) ||
+            (magic[1] == 0xF2));
+}
 
-    audio_stream_io_seek(io, 0, AUDIO_STREAM_SEEK_SET);
+static bool mp3_id3v2_header_is_valid(const mp3_id3_header_v2_t *tag) {
+    if (memcmp("ID3", tag->header, sizeof(tag->header)) != 0) {
+        return false;
+    }
 
-    // see https://en.wikipedia.org/wiki/List_of_file_signatures
-    uint8_t magic[3];
-    if(sizeof(magic) == audio_stream_io_read(io, magic, sizeof(magic))) {
-        if((magic[0] == 0xFF) &&
-            (magic[1] == 0xFB))
-        {
-            is_mp3_file = true;
-        } else if((magic[0] == 0xFF) &&
-                  (magic[1] == 0xF3))
-        {
-            is_mp3_file = true;
-        } else if((magic[0] == 0xFF) &&
-                  (magic[1] == 0xF2))
-        {
-            is_mp3_file = true;
-        } else if((magic[0] == 0x49) &&
-                  (magic[1] == 0x44) &&
-                  (magic[2] == 0x33)) /* 'ID3' */
-        {
-            audio_stream_io_seek(io, 0, AUDIO_STREAM_SEEK_SET);
+    if ((static_cast<uint8_t>(tag->ver) == UINT8_MAX) ||
+        (static_cast<uint8_t>(tag->revision) == UINT8_MAX)) {
+        return false;
+    }
 
-            /* Get ID3 head */
-            mp3_id3_header_v2_t tag;
-            if (sizeof(mp3_id3_header_v2_t) == audio_stream_io_read(io, &tag, sizeof(mp3_id3_header_v2_t))) {
-                if (memcmp("ID3", &tag, sizeof(tag.header)) == 0) {
-                    is_mp3_file = true;
-
-                    /* Leave the stream positioned after the ID3v2 tag so decoding
-                     * starts at the first audio frame. Embedded album art inside
-                     * the tag contains byte patterns that look like MP3 sync
-                     * words, which derails the frame search (and can trigger the
-                     * invalid-frame-header path on every false positive). */
-                    uint32_t tag_size = mp3_id3v2_tag_size(&tag);
-                    audio_stream_io_seek(io, sizeof(mp3_id3_header_v2_t) + tag_size, AUDIO_STREAM_SEEK_SET);
-                    return is_mp3_file;
-                }
-            }
+    for (char size_byte : tag->size) {
+        if ((static_cast<uint8_t>(size_byte) & 0x80U) != 0) {
+            return false;
         }
     }
 
-    // seek back to the start of the file to avoid
-    // missing frames upon decode
-    audio_stream_io_seek(io, 0, AUDIO_STREAM_SEEK_SET);
+    return true;
+}
 
-    return is_mp3_file;
+static bool mp3_rewind_after_probe(audio_stream_io_handle_t io, bool matched) {
+    const bool rewound =
+        audio_stream_io_seek(io, 0, AUDIO_STREAM_SEEK_SET) == ESP_OK;
+    return matched && rewound;
+}
+
+static bool mp3_skip_id3_payload(audio_stream_io_handle_t io,
+                                 uint32_t payload_size) {
+    if (payload_size == 0) {
+        return true;
+    }
+
+    /*
+     * Seek to the last payload byte, then read that byte to prove the declared
+     * tag exists. File streams may successfully seek beyond EOF, so seeking
+     * directly to the end of the payload would not detect a truncated tag.
+     *
+     * Limited-seek streams reject an uncached forward seek without moving.
+     * In that case, consume the payload sequentially.
+     */
+    const long seek_distance = static_cast<long>(payload_size - 1U);
+    long position_before;
+    const esp_err_t tell_result = audio_stream_io_tell(io, &position_before);
+    const esp_err_t seek_result =
+        audio_stream_io_seek(io, seek_distance, AUDIO_STREAM_SEEK_CUR);
+    if (seek_result == ESP_OK) {
+        uint8_t last_payload_byte;
+        return audio_stream_io_read(io, &last_payload_byte,
+                                    sizeof(last_payload_byte)) ==
+               sizeof(last_payload_byte);
+    }
+
+    bool seek_did_not_move = (seek_result == ESP_ERR_NOT_SUPPORTED);
+    if (!seek_did_not_move && (tell_result == ESP_OK)) {
+        long position_after;
+        seek_did_not_move =
+            (audio_stream_io_tell(io, &position_after) == ESP_OK) &&
+            (position_after == position_before);
+    }
+    if (!seek_did_not_move) {
+        return false;
+    }
+
+    uint8_t discard[256];
+    uint32_t remaining = payload_size;
+    while (remaining != 0) {
+        const size_t to_read =
+            remaining < sizeof(discard) ? remaining : sizeof(discard);
+        const size_t bytes_read = audio_stream_io_read(io, discard, to_read);
+        if (bytes_read == 0) {
+            return false;
+        }
+        remaining -= static_cast<uint32_t>(bytes_read);
+    }
+
+    return true;
+}
+
+bool is_mp3(audio_stream_io_handle_t io) {
+    if (!io ||
+        (audio_stream_io_seek(io, 0, AUDIO_STREAM_SEEK_SET) != ESP_OK)) {
+        return false;
+    }
+
+    // see https://en.wikipedia.org/wiki/List_of_file_signatures
+    uint8_t magic[3];
+    if (audio_stream_io_read(io, magic, sizeof(magic)) != sizeof(magic)) {
+        return mp3_rewind_after_probe(io, false);
+    }
+
+    if (mp3_frame_signature_matches(magic)) {
+        return mp3_rewind_after_probe(io, true);
+    }
+
+    if (memcmp("ID3", magic, sizeof(magic)) != 0) {
+        return mp3_rewind_after_probe(io, false);
+    }
+
+    if (audio_stream_io_seek(io, 0, AUDIO_STREAM_SEEK_SET) != ESP_OK) {
+        return false;
+    }
+
+    mp3_id3_header_v2_t tag;
+    if ((audio_stream_io_read(io, &tag, sizeof(tag)) != sizeof(tag)) ||
+        !mp3_id3v2_header_is_valid(&tag)) {
+        return mp3_rewind_after_probe(io, false);
+    }
+
+    /*
+     * Leave the stream positioned after the ID3v2 tag so decoding starts at
+     * the first audio frame. Embedded album art may contain MP3-like sync
+     * words that would otherwise derail frame search.
+     */
+    if (!mp3_skip_id3_payload(io, mp3_id3v2_tag_size(&tag))) {
+        return mp3_rewind_after_probe(io, false);
+    }
+
+    return true;
 }
 
 /**
