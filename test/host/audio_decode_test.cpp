@@ -228,7 +228,7 @@ void test_owned_file_stream_closes_file() {
 
     audio_stream_io_handle_t handle = audio_stream_io_from_file(file.get());
     REQUIRE(handle != nullptr);
-    file.release();
+    (void)file.release();  // Ownership transferred to handle.
     audio_stream_io_close(handle);
 
     errno = 0;
