@@ -36,3 +36,25 @@ add_test(
     COMMAND audio_decode_host_test
             "${REPOSITORY_ROOT}/examples/esp_box_mp3/main/sample.mp3"
             "${CMAKE_CURRENT_LIST_DIR}/fixtures/wav")
+
+add_executable(audio_http_stream_io_test
+    audio_http_stream_io_test.cpp
+    http_stream_test_runtime.cpp
+    "${REPOSITORY_ROOT}/audio_http_stream.cpp"
+    "${REPOSITORY_ROOT}/audio_mp3.cpp"
+    "${REPOSITORY_ROOT}/audio_stream_io.cpp"
+    "${REPOSITORY_ROOT}/audio_wav.cpp")
+
+target_compile_features(audio_http_stream_io_test PRIVATE cxx_std_20)
+target_compile_definitions(audio_http_stream_io_test PRIVATE
+    CONFIG_AUDIO_PLAYER_ENABLE_HTTP_STREAM=1
+    CONFIG_AUDIO_PLAYER_LOG_LEVEL=0)
+target_include_directories(audio_http_stream_io_test PRIVATE
+    stubs
+    "${REPOSITORY_ROOT}"
+    "${REPOSITORY_ROOT}/include")
+target_link_libraries(audio_http_stream_io_test PRIVATE helixmp3)
+
+add_test(
+    NAME audio_http_stream_io_test
+    COMMAND audio_http_stream_io_test)
