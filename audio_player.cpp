@@ -71,6 +71,11 @@ typedef enum {
 #endif
 } FILE_TYPE;
 
+/*
+ * audio_instance_t is allocated with calloc() in audio_instance_new(),
+ * so all members are zero-initialized before use.
+ */
+// cppcheck-suppress-begin uninitMemberVarNoCtor
 typedef struct audio_instance {
     /**
      * Set to true before task is created, false immediately before the
@@ -100,6 +105,7 @@ typedef struct audio_instance {
 
     format i2s_format;  // last configured i2s format
 } audio_instance_t;
+// cppcheck-suppress-end uninitMemberVarNoCtor
 
 static audio_instance_t *g_instance = NULL;  // when non-null, in legacy non-mixer mode
 
