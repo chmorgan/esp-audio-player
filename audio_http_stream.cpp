@@ -22,6 +22,12 @@
 
 static const char *TAG = "audio_http_stream";
 
+/*
+ * audio_http_stream_t is allocated with calloc() in
+ * audio_http_stream_open(). Members intentionally start at zero except
+ * content_length, which is explicitly initialized to -1 after allocation.
+ */
+// cppcheck-suppress-begin uninitMemberVarNoCtor
 typedef struct audio_http_stream {
     audio_http_stream_config_t cfg;
     audio_http_stream_state_t state;
@@ -49,6 +55,7 @@ typedef struct audio_http_stream {
     size_t initial_buf_read_pos;
     size_t initial_buf_filled;
 } audio_http_stream_t;
+// cppcheck-suppress-end uninitMemberVarNoCtor
 
 /* ================= Stream I/O callbacks for HTTP stream ================= */
 
@@ -368,6 +375,8 @@ audio_http_stream_handle_t audio_http_stream_open(const audio_http_stream_config
 
     audio_http_stream_t *stream = static_cast<audio_http_stream_t*>(calloc(1, sizeof(audio_http_stream_t)));
     ESP_RETURN_ON_FALSE(stream != NULL, NULL, TAG, "allocation failed");
+
+    stream->content_length = -1;
 
     // Copy the URL string since caller may free it
     char *url_copy = strdup(cfg->url);
