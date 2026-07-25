@@ -31,6 +31,7 @@ fi
 "$cppcheck_bin" --version
 
 exec "$cppcheck_bin" \
+    -Itest/host/stubs \
     --enable=all \
     --inconclusive \
     --inline-suppr \
