@@ -70,6 +70,8 @@ static esp_err_t player_set_clock(uint32_t sample_rate, uint32_t bits_per_sample
     return esp_codec_dev_open(speaker_codec, &sample_info);
 }
 
+// audio_player_cb_t defines the callback parameter as a mutable pointer.
+// cppcheck-suppress constParameterCallback
 static void player_event_callback(audio_player_cb_ctx_t *ctx)
 {
     if (ctx->audio_event == AUDIO_PLAYER_CALLBACK_EVENT_IDLE) {
