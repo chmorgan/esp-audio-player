@@ -30,6 +30,8 @@ fi
 
 "$cppcheck_bin" --version
 
+# cppcheck does not parse GNU asm("linker_symbol") declarations used for
+# ESP-IDF embedded binary boundaries. Strip only the annotation during analysis.
 exec "$cppcheck_bin" \
     -Itest/host/stubs \
     --enable=all \
@@ -43,4 +45,5 @@ exec "$cppcheck_bin" \
     --error-exitcode=1 \
     -DCONFIG_AUDIO_PLAYER_ENABLE_MP3 \
     -DCONFIG_AUDIO_PLAYER_ENABLE_WAV \
+    '-Dasm(x)=' \
     "${sources[@]}"
