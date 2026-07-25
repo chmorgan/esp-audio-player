@@ -166,8 +166,8 @@ typedef enum {
 
 typedef esp_err_t (*audio_player_mute_fn)(AUDIO_PLAYER_MUTE_SETTING setting);
 typedef esp_err_t (*audio_reconfig_std_clock)(uint32_t rate, uint32_t bits_cfg, i2s_slot_mode_t ch);
-typedef esp_err_t (*audio_player_write_fn)(void *audio_buffer, size_t len, size_t *bytes_written, uint32_t timeout_ms);
-typedef esp_err_t (*audio_player_write_fn2)(void *audio_buffer, size_t len, size_t *bytes_written, uint32_t timeout_ms, void *ctx);
+typedef esp_err_t (*audio_player_write_fn)(const void *audio_buffer, size_t len, size_t *bytes_written, uint32_t timeout_ms);
+typedef esp_err_t (*audio_player_write_fn2)(const void *audio_buffer, size_t len, size_t *bytes_written, uint32_t timeout_ms, void *ctx);
 
 typedef struct {
     audio_player_mute_fn mute_fn;
