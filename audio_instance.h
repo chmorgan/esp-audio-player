@@ -29,7 +29,7 @@ esp_err_t audio_instance_pause(audio_instance_handle_t h);
 esp_err_t audio_instance_resume(audio_instance_handle_t h);
 esp_err_t audio_instance_stop(audio_instance_handle_t h);
 
-esp_err_t audio_instance_new(audio_instance_handle_t *h, audio_player_config_t *config);
+esp_err_t audio_instance_new(audio_instance_handle_t *h, const audio_player_config_t *config);
 esp_err_t audio_instance_delete(audio_instance_handle_t h);
 
 #ifdef __cplusplus
