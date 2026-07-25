@@ -235,7 +235,10 @@ TEST_CASE("audio_stream_io can use custom stream implementation", "[stream_io]")
     };
 
     test_stream_ctx_t *ctx = (test_stream_ctx_t*)malloc(sizeof(test_stream_ctx_t));
-    TEST_ASSERT_NOT_NULL(ctx);
+    if (ctx == NULL) {
+        TEST_FAIL_MESSAGE("Failed to allocate custom stream context");
+        return;
+    }
 
     ctx->data = (const uint8_t*)"Custom stream test";
     ctx->size = strlen((char*)ctx->data) + 1;
