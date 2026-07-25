@@ -168,6 +168,8 @@ static void dispatch_event(audio_http_stream_t *stream, audio_http_stream_event_
 
 #if CONFIG_AUDIO_PLAYER_ENABLE_HTTP_STREAM
 
+// ESP-IDF defines esp_http_client_event_cb_t with a mutable event pointer.
+// cppcheck-suppress constParameterCallback
 static esp_err_t http_event_handler(esp_http_client_event_t *evt) {
     switch (evt->event_id) {
         case HTTP_EVENT_ERROR:
