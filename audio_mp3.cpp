@@ -42,7 +42,7 @@ bool is_mp3(audio_stream_io_handle_t io) {
             /* Get ID3 head */
             mp3_id3_header_v2_t tag;
             if (sizeof(mp3_id3_header_v2_t) == audio_stream_io_read(io, &tag, sizeof(mp3_id3_header_v2_t))) {
-                if (memcmp("ID3", (const void *) &tag, sizeof(tag.header)) == 0) {
+                if (memcmp("ID3", &tag, sizeof(tag.header)) == 0) {
                     is_mp3_file = true;
 
                     /* Leave the stream positioned after the ID3v2 tag so decoding
