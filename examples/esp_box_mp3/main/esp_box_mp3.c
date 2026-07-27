@@ -43,12 +43,13 @@ static esp_err_t player_mute(AUDIO_PLAYER_MUTE_SETTING setting)
     return ret;
 }
 
-static esp_err_t player_write(void *audio_buffer, size_t len,
+static esp_err_t player_write(const void *audio_buffer, size_t len,
                               size_t *bytes_written, uint32_t timeout_ms)
 {
     (void)timeout_ms;
 
-    esp_err_t ret = esp_codec_dev_write(speaker_codec, audio_buffer, (int)len);
+    // esp_codec_dev_write does not modify the PCM data despite its mutable API.
+    esp_err_t ret = esp_codec_dev_write(speaker_codec, (void *)audio_buffer, (int)len);
     *bytes_written = (ret == ESP_OK) ? len : 0;
     return ret;
 }
