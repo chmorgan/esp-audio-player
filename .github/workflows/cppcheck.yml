@@ -9,13 +9,31 @@ jobs:
   build:
     name: cppcheck
     runs-on: ubuntu-latest
+    env:
+      CPPCHECK_VERSION: 2.21.0
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install cppcheck
+      - name: Install cppcheck 2.21.0
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes cppcheck
+          curl --fail --location --silent --show-error \
+            "https://github.com/cppcheck-opensource/cppcheck/archive/refs/tags/${CPPCHECK_VERSION}.tar.gz" \
+            --output "${RUNNER_TEMP}/cppcheck.tar.gz"
+          tar --extract --gzip \
+            --file "${RUNNER_TEMP}/cppcheck.tar.gz" \
+            --directory "${RUNNER_TEMP}"
+          cmake \
+            -S "${RUNNER_TEMP}/cppcheck-${CPPCHECK_VERSION}" \
+            -B "${RUNNER_TEMP}/cppcheck-build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/cppcheck-install" \
+            -DUSE_MATCHCOMPILER=ON
+          cmake --build "${RUNNER_TEMP}/cppcheck-build" --parallel 2
+          cmake --install "${RUNNER_TEMP}/cppcheck-build"
+
+          cppcheck_version="$("${RUNNER_TEMP}/cppcheck-install/bin/cppcheck" --version)"
+          test "${cppcheck_version}" = "Cppcheck ${CPPCHECK_VERSION}"
+          echo "${RUNNER_TEMP}/cppcheck-install/bin" >> "${GITHUB_PATH}"
 
       - name: cppcheck
         run: ./scripts/run-cppcheck.sh
