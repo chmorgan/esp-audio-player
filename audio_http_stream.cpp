@@ -19,6 +19,7 @@
 #include "audio_log.h"
 
 #if CONFIG_AUDIO_PLAYER_ENABLE_HTTP_STREAM
+#include "esp_idf_version.h"
 #include "esp_http_client.h"
 #endif
 
