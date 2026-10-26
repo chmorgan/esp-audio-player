@@ -306,6 +306,14 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt) {
         case HTTP_EVENT_ON_HEADER:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
             break;
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+        case HTTP_EVENT_ON_STATUS_CODE:
+            ESP_LOGI(TAG, "HTTP_EVENT_ON_STATUS_CODE, status=%d", esp_http_client_get_status_code(evt->client));
+            break;
+        case HTTP_EVENT_ON_HEADERS_COMPLETE:
+            ESP_LOGI(TAG, "HTTP_EVENT_ON_HEADERS_COMPLETE");
+            break;
+#endif
         case HTTP_EVENT_ON_DATA:
             ESP_LOGD(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
             break;
@@ -317,6 +325,9 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt) {
             break;
         case HTTP_EVENT_REDIRECT:
             ESP_LOGI(TAG, "HTTP_EVENT_REDIRECT");
+            break;
+        default:
+            ESP_LOGW(TAG, "unhandled http event id: %d", evt->event_id);
             break;
     }
     return ESP_OK;
