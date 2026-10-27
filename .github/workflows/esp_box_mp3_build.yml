@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  esp-idf-5-build:
     name: ESP-IDF 5.4.4
     runs-on: ubuntu-latest
     steps:
@@ -26,3 +26,20 @@ jobs:
             --workdir /esp-audio-player \
             espressif/idf:v5.4.4 \
             idf.py -C examples/esp_box_mp3 -D IDF_TARGET=esp32s3 build
+
+  esp-idf-6-build:
+    name: ESP-IDF 6
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build example
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --env HOME=/tmp \
+            --volume "$GITHUB_WORKSPACE:/esp-audio-player" \
+            --workdir /esp-audio-player \
+            espressif/idf:v6.1 \
+            idf.py -C examples/esp_box_mp3_no_bsp -D IDF_TARGET=esp32s3 build
