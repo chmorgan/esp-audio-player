@@ -19,7 +19,6 @@
 #include "audio_log.h"
 
 #if CONFIG_AUDIO_PLAYER_ENABLE_HTTP_STREAM
-#include "esp_idf_version.h"
 #include "esp_http_client.h"
 #endif
 
@@ -307,14 +306,16 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt) {
         case HTTP_EVENT_ON_HEADER:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
             break;
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+        #ifdef HTTP_EVENT_ON_STATUS_CODE
         case HTTP_EVENT_ON_STATUS_CODE:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_STATUS_CODE, status=%d", esp_http_client_get_status_code(evt->client));
             break;
+        #endif
+        #ifdef HTTP_EVENT_ON_HEADERS_COMPLETE
         case HTTP_EVENT_ON_HEADERS_COMPLETE:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_HEADERS_COMPLETE");
             break;
-#endif
+        #endif
         case HTTP_EVENT_ON_DATA:
             ESP_LOGD(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
             break;
