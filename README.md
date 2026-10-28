@@ -30,6 +30,7 @@ It does however have a number of advantages at the moment including:
 
 ### Examples
 
+* [ESP-BOX MP3 without BSP](examples/esp_box_mp3_no_bsp/) loops an embedded MP3 through the original ESP32-S3-BOX speaker using registry codec drivers and native ESP-IDF 6.x drivers.
 * [esp-box mp3_demo](https://github.com/espressif/esp-box/tree/master/examples/mp3_demo) uses esp-audio-player.
 * The [test example](https://github.com/chmorgan/esp-audio-player/tree/main/test) is a simpler example than mp3_demo that also uses the esp-box hardware.
 
