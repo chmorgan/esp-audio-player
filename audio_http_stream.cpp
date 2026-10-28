@@ -20,6 +20,9 @@
 
 #if CONFIG_AUDIO_PLAYER_ENABLE_HTTP_STREAM
 #include "esp_http_client.h"
+#ifdef ESP_PLATFORM
+#include "esp_idf_version.h"
+#endif
 #endif
 
 static const char *TAG = "audio_http_stream";
@@ -306,6 +309,14 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt) {
         case HTTP_EVENT_ON_HEADER:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
             break;
+#if defined(ESP_IDF_VERSION_MAJOR) && ESP_IDF_VERSION_MAJOR >= 6
+        case HTTP_EVENT_ON_HEADERS_COMPLETE:
+            ESP_LOGI(TAG, "HTTP_EVENT_ON_HEADERS_COMPLETE");
+            break;
+        case HTTP_EVENT_ON_STATUS_CODE:
+            ESP_LOGI(TAG, "HTTP_EVENT_ON_STATUS_CODE, status=%d", esp_http_client_get_status_code(evt->client));
+            break;
+#endif
         case HTTP_EVENT_ON_DATA:
             ESP_LOGD(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
             break;
@@ -317,6 +328,9 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt) {
             break;
         case HTTP_EVENT_REDIRECT:
             ESP_LOGI(TAG, "HTTP_EVENT_REDIRECT");
+            break;
+        default:
+            ESP_LOGW(TAG, "unhandled http event id: %d", evt->event_id);
             break;
     }
     return ESP_OK;
