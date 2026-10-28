@@ -78,6 +78,9 @@ compiler installed, run:
 The script downloads the pinned `libhelix-mp3` revision, builds the production
 stream and codec sources, and runs the tests with CTest.
 
+Run the ESP-IDF 6 GitHub Actions build locally with
+[`scripts/run-esp-idf-6-build.sh`](scripts/run-esp-idf-6-build.sh).
+
 
 ## Audio Mixer
 
