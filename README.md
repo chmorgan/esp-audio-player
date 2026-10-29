@@ -2,9 +2,12 @@
 
 
 [![cppcheck-action](https://github.com/chmorgan/esp-audio-player/actions/workflows/cppcheck.yml/badge.svg)](https://github.com/chmorgan/esp-audio-player/actions/workflows/cppcheck.yml)
+[![ESP-IDF v5.x support](https://img.shields.io/badge/ESP--IDF-v5.x-blue.svg)](#capabilities)
+[![ESP-IDF v6.x support](https://img.shields.io/badge/ESP--IDF-v6.x-blue.svg)](#capabilities)
 
 ## Capabilities
 
+* ESP-IDF v5.x and v6.x support
 * MP3 decoding (via libhelix-mp3)
 * Wav/wave file decoding
 * Audio mixing (multiple concurrent streams)
