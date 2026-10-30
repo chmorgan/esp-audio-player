@@ -1,7 +1,9 @@
 # Audio player component for esp32
 
 
-[![cppcheck-action](https://github.com/chmorgan/esp-audio-player/actions/workflows/cppcheck.yml/badge.svg)](https://github.com/chmorgan/esp-audio-player/actions/workflows/cppcheck.yml)
+[![cppcheck-action](https://github.com/chmorgan/esp-audio-player/actions/workflows/cppcheck.yml/badge.svg?branch=main&event=push)](https://github.com/chmorgan/esp-audio-player/actions/workflows/cppcheck.yml?query=branch%3Amain)
+[![ESP-IDF builds](https://github.com/chmorgan/esp-audio-player/actions/workflows/esp_box_mp3_build.yml/badge.svg?branch=main&event=push)](https://github.com/chmorgan/esp-audio-player/actions/workflows/esp_box_mp3_build.yml?query=branch%3Amain)
+[![Host codec tests](https://github.com/chmorgan/esp-audio-player/actions/workflows/host_codec_test.yml/badge.svg?branch=main&event=push)](https://github.com/chmorgan/esp-audio-player/actions/workflows/host_codec_test.yml?query=branch%3Amain)
 [![ESP-IDF v5.x support](https://img.shields.io/badge/ESP--IDF-v5.x-blue.svg)](#capabilities)
 [![ESP-IDF v6.x support](https://img.shields.io/badge/ESP--IDF-v6.x-blue.svg)](#capabilities)
 
